@@ -1,0 +1,82 @@
+add_person:
+  fields:
+    name:
+      required: true
+      selector:
+        text:
+add_task:
+  fields:
+    title:
+      required: true
+      selector:
+        text:
+    person:
+      required: true
+      selector:
+        text:
+    frequency:
+      required: true
+      selector:
+        select:
+          options:
+            - daily
+            - weekly
+            - monthly
+    time_of_day:
+      selector:
+        select:
+          options:
+            - label: Morgens
+              value: morning
+            - label: Tagsüber
+              value: daytime
+            - label: Abends
+              value: evening
+            - label: Ohne Zuordnung
+              value: anytime
+    weekdays:
+      selector:
+        text:
+    day:
+      selector:
+        number:
+          min: 1
+          max: 31
+          mode: box
+    start:
+      selector:
+        date:
+delete_task:
+  fields:
+    task_id:
+      required: true
+      selector:
+        text:
+
+update_task:
+  fields:
+    task_id:
+      required: true
+      selector:
+        text:
+    title:
+      required: true
+      selector:
+        text:
+    person:
+      required: true
+      selector:
+        text:
+    frequency:
+      required: true
+      selector:
+        select:
+          options: [daily, weekly, monthly]
+    weekdays:
+      selector:
+        text:
+    day:
+      selector:
+        number:
+          min: 1
+          max: 31

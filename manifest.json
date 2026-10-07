@@ -1,0 +1,10 @@
+{
+  "domain": "family_tasks",
+  "name": "Family Tasks",
+  "version": "0.4.0",
+  "documentation": "https://developers.home-assistant.io/",
+  "requirements": [],
+  "codeowners": [],
+  "config_flow": true,
+  "iot_class": "local_push"
+}
