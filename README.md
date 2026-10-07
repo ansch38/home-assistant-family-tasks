@@ -8,6 +8,8 @@
   A family-friendly Home Assistant integration for recurring household tasks.
 </p>
 
+<p align="center">
+</p>
 
 Family Tasks is a custom Home Assistant integration for recurring household tasks for multiple family members, with a tablet-friendly family board.
 
