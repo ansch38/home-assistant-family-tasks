@@ -1,10 +1,14 @@
 {
   "domain": "family_tasks",
   "name": "Family Tasks",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "documentation": "https://github.com/ansch38/home-assistant-family-tasks",
   "requirements": [],
-  "codeowners": ["@ansch38"],
+  "codeowners": [
+    "@ansch38"
+  ],
   "config_flow": true,
-  "iot_class": "local_push"
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/ansch38/home-assistant-family-tasks/issues",
+  "single_config_entry": true
 }

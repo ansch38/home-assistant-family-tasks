@@ -1,104 +1,56 @@
+<p align="center">
+  <img src="images/family-tasks-logo.png" alt="Family Tasks logo" width="220">
+</p>
+
+<h1 align="center">Family Tasks for Home Assistant</h1>
+
+<p align="center">
+  A family-friendly Home Assistant integration for recurring household tasks.
+</p>
+
 # Family Tasks for Home Assistant
 
-Family Tasks is a custom Home Assistant integration for managing recurring household tasks for multiple family members.
-
-It is designed especially for family dashboards and wall-mounted tablets.
+Family Tasks is a custom Home Assistant integration for recurring household tasks for multiple family members, with a tablet-friendly family board.
 
 ## Features
 
 - Multiple family members
-- Daily, weekly, and monthly recurring tasks
-- Assign tasks to individual family members
-- Time-of-day categories:
-  - 🌅 Morning
-  - ☀️ Daytime
-  - 🌙 Evening
-  - Anytime
-- Mark tasks as completed directly from the dashboard
-- Automatically create recurring task instances
-- Archive missed tasks
-- Preserve task completion history
-- Home Assistant To-do integration
-- Home Assistant Calendar integration
-- Tablet-friendly family dashboard
-- Separate task and family member management cards
-- Local storage
-- No external cloud service required
+- Daily, weekly and monthly recurring tasks
+- Morning, Daytime, Evening and Anytime categories
+- Person-based tablet dashboard
+- Complete tasks directly from the dashboard
+- Home Assistant To-do and Calendar entities
+- Missed-task archive and completion history
+- Local Home Assistant storage; no Family Tasks cloud service
 
-## Dashboard
+## Installation with HACS
 
-Family Tasks provides a tablet-friendly dashboard card where each family member is displayed in a separate column.
+1. Add `https://github.com/ansch38/home-assistant-family-tasks` as a HACS custom repository of type **Integration**.
+2. Install Family Tasks and restart Home Assistant.
+3. Go to **Settings → Devices & services → Add integration** and add **Family Tasks**. If it was already configured, do not add it again.
+4. In **Settings → Dashboards → Resources**, add this resource once as a JavaScript module:
 
-Within each person's column, tasks are grouped by time of day:
+   `/family_tasks/family-tasks-card.js`
 
-- 🌅 Morning
-- ☀️ Daytime
-- 🌙 Evening
-- Anytime
+   **Since v0.5.0, keep this URL unchanged for future updates. Do not append `?v=...`.** The integration serves the dashboard card directly from this stable resource URL.
 
-Tasks can be marked as completed directly from the dashboard.
+## Dashboard cards
 
-## Installation
-
-### HACS
-
-1. Open HACS in Home Assistant.
-2. Open **Custom repositories**.
-3. Add the following repository:
-
-   `https://github.com/ansch38/home-assistant-family-tasks`
-
-4. Select **Integration** as the repository type.
-5. Install **Family Tasks**.
-6. Restart Home Assistant.
-7. Go to **Settings → Devices & services → Add integration**.
-8. Search for **Family Tasks** and complete the setup.
-
-> If Family Tasks was already configured before installing it through HACS,
-> you do not need to add the integration again.
-
-## Entities
-
-Family Tasks creates several Home Assistant entities.
-
-Typical entity IDs are:
-
-- `todo.family_tasks`
-- `calendar.family_tasks`
-- `sensor.family_tasks_catalog`
-- `sensor.family_tasks_open`
-- `sensor.family_tasks_done`
-- `sensor.family_tasks_missed`
-
-Entity IDs may differ if entities with the same names already exist in your Home Assistant installation.
-
-## Dashboard Cards
-
-Family Tasks currently provides three custom dashboard cards.
-
-### Task Management
-
-The task management card is used to create and edit recurring tasks.
+### Task management
 
 ```yaml
 type: custom:family-tasks-card
 catalog_entity: sensor.family_tasks_catalog
 ```
 
-### Family Member Management
-
-Family member management is kept separate because family members usually change much less frequently than tasks.
+### Family member management
 
 ```yaml
 type: custom:family-tasks-people-card
 catalog_entity: sensor.family_tasks_catalog
 ```
 
-### Tablet Family Board
-
-The family board is designed for wall-mounted tablets and larger screens.
-
-Each family member is displayed in a separate column.
+### Tablet family board
 
 ```yaml
 type: custom:family-tasks-board-card
@@ -108,144 +60,28 @@ todo_entity: todo.family_tasks
 columns: 4
 ```
 
-Change `columns` to match the number of family members you want to display.
+If `columns` is omitted, the board adapts to the available width. A Home Assistant Panel (single card) view works well for wall-mounted tablets.
 
-If `columns` is omitted, the card automatically adapts to the available screen width.
+## Entities
 
-For a wall-mounted tablet, a Home Assistant **Panel (single card)** dashboard view is recommended.
+Typical entity IDs are `todo.family_tasks`, `calendar.family_tasks`, `sensor.family_tasks_catalog`, `sensor.family_tasks_open`, `sensor.family_tasks_done`, and `sensor.family_tasks_missed`. IDs can differ if Home Assistant has to resolve a naming conflict.
 
-## Recurring Tasks
+## Recurrence and missed tasks
 
-Family Tasks supports several recurrence types.
+Daily, selected-weekday weekly, and day-of-month monthly recurrences are supported. For a monthly task whose selected day does not exist, the last day of that month is used. When an open occurrence passes its due date, it is archived as `missed`; a new occurrence is created according to the recurrence rule.
 
-### Daily
+## Data and privacy
 
-The task is created every day.
-
-Example:
-
-`Empty the dishwasher`
-
-### Weekly
-
-Tasks can be assigned to selected weekdays.
-
-Example:
-
-`Take out the trash — Monday and Thursday`
-
-### Monthly
-
-Tasks can be assigned to a specific day of the month.
-
-Example:
-
-`Change water filter — 15th of every month`
-
-If the selected day does not exist in a particular month, the task is scheduled for the last day of that month.
-
-## Time of Day
-
-Tasks can optionally be assigned to a time-of-day category:
-
-- Morning
-- Daytime
-- Evening
-- Anytime
-
-These categories are currently used for organizing tasks on the dashboard.
-
-They are not yet tied to specific clock times.
-
-Future versions may add optional reminders and configurable time ranges.
-
-## Missed Tasks
-
-When an open task passes its due date without being completed, it is archived as `missed`.
-
-A new task instance is then created according to the recurrence rule.
-
-This allows Family Tasks to preserve the history of previous task occurrences instead of keeping one task permanently overdue.
-
-## Task History
-
-Family Tasks keeps track of task instances and their status.
-
-Possible states include:
-
-- Open
-- Completed
-- Missed
-
-This makes it possible to retain historical information even when recurring tasks create new instances.
-
-## Data Storage
-
-Family Tasks stores its data locally using Home Assistant's storage system.
-
-Family members, task definitions and task history are not stored in this GitHub repository and are not sent to an external Family Tasks cloud service.
-
-Updating the integration therefore should not remove existing Family Tasks data.
-
-Nevertheless, creating a Home Assistant backup before upgrading is strongly recommended.
+Family members, task definitions and history are stored locally in Home Assistant storage. They are not stored in this repository or sent to a Family Tasks cloud service. Create a Home Assistant backup before upgrades. Never commit Home Assistant tokens, passwords, `secrets.yaml`, `.storage`, databases, backups, private keys or personal task data.
 
 ## Updating
 
-When installed through HACS, new Family Tasks releases can be installed directly through HACS.
+Install new releases through HACS and restart Home Assistant. Starting with v0.5.0, the dashboard resource URL remains `/family_tasks/family-tasks-card.js`; manual cache-buster changes are no longer needed.
 
-After updating the integration, restart Home Assistant.
+## Development status
 
-## Development Status
-
-Family Tasks is currently under active development.
-
-The project originally started as a custom integration for a family Home Assistant dashboard and is gradually being developed into a reusable Home Assistant integration.
-
-Until version 1.0, functionality, configuration and internal data structures may still change.
-
-## Planned Features
-
-Possible future improvements include:
-
-- Improved HACS frontend integration
-- Automatic frontend resource handling
-- Easier task editing
-- Family member editing and deletion
-- Notifications and reminders
-- Configurable time ranges for Morning, Daytime and Evening
-- Task rotation between family members
-- Vacation / pause mode
-- Statistics
-- Improved task history
-- More dashboard customization options
-
-## Privacy
-
-Family Tasks runs locally inside Home Assistant.
-
-No external Family Tasks cloud service is required.
-
-Do not store sensitive Home Assistant data in this repository, including:
-
-- Home Assistant access tokens
-- Passwords
-- `secrets.yaml`
-- `.storage` files
-- Home Assistant databases
-- Backups
-- Private keys
-- Personal family task data
-
-## Contributing
-
-Issues, bug reports and suggestions are welcome.
-
-Pull requests can be used to propose improvements or fixes.
+Family Tasks is under active development. Until version 1.0, functionality, configuration and internal data structures may change.
 
 ## License
 
-Family Tasks is released under the **MIT License**.
-
-Copyright (c) 2026 ansch38
-
-See the `LICENSE` file for the full license text.
+Family Tasks is released under the MIT License. See `LICENSE` for the full license text.
