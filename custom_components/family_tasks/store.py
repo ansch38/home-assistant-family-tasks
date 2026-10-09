@@ -11,7 +11,9 @@ def occurrence_dates(task, start, end):
         freq = task["frequency"]
         match = (freq == "daily" or
                  freq == "weekly" and current.weekday() in task["weekdays"] or
-                 freq == "monthly" and current.day == min(task["day"], monthrange(current.year, current.month)[1]))
+                 freq == "monthly" and current.day == min(task["day"], monthrange(current.year, current.month)[1]) or
+                 freq == "yearly" and current.month == task.get("month", anchor.month) and
+                 current.day == min(task.get("day", anchor.day), monthrange(current.year, current.month)[1]))
         if match:
             yield current
         current += timedelta(days=1)
@@ -54,12 +56,14 @@ class FamilyStore:
         await self.save()
         return person
 
-    async def add_task(self, title, person_id, frequency, weekdays=None, day=None, start=None, time_of_day="anytime", missed_behavior="discard"):
+    async def add_task(self, title, person_id, frequency, weekdays=None, day=None, start=None, time_of_day="anytime", missed_behavior="discard", month=None):
         if not any(p["id"] == person_id for p in self.data["people"]):
             raise ValueError("Unbekannte Person")
         task = {"id": uuid4().hex, "title": title, "person_id": person_id,
                 "frequency": frequency, "weekdays": weekdays or [],
-                "day": day or 1, "start": start or dt_util.now().date().isoformat(),
+                "day": day or (date.fromisoformat(start).day if start and frequency == "yearly" else dt_util.now().day if frequency == "yearly" else 1),
+                "month": month or (date.fromisoformat(start).month if start else dt_util.now().month),
+                "start": start or dt_util.now().date().isoformat(),
                 "time_of_day": time_of_day, "missed_behavior": missed_behavior}
         self.data["tasks"].append(task)
         await self.rollover()
@@ -135,7 +139,7 @@ class FamilyStore:
         instance["completed_at"] = dt_util.now().isoformat() if completed else None
         await self.save()
 
-    async def update_task(self, task_id, title, person_id, frequency, weekdays=None, day=None, time_of_day="anytime", missed_behavior="archive"):
+    async def update_task(self, task_id, title, person_id, frequency, weekdays=None, day=None, time_of_day="anytime", missed_behavior="archive", month=None):
         task = next((t for t in self.data["tasks"] if t["id"] == task_id), None)
         if task is None:
             raise ValueError("Aufgabe nicht gefunden")
@@ -144,6 +148,8 @@ class FamilyStore:
         task.update(title=title, person_id=person_id, frequency=frequency,
                     weekdays=weekdays or [], day=day or 1, time_of_day=time_of_day,
                     missed_behavior=missed_behavior)
+        if frequency == "yearly":
+            task["month"] = month or task.get("month") or date.fromisoformat(task["start"]).month
         # Already recorded occurrences remain historical. Only future instances
         # follow the changed recurrence; today's existing instance remains.
         await self.save()

@@ -22,6 +22,7 @@ add_task:
             - daily
             - weekly
             - monthly
+            - yearly
     time_of_day:
       selector:
         select:
@@ -47,6 +48,12 @@ add_task:
     weekdays:
       selector:
         text:
+    month:
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
     day:
       selector:
         number:
@@ -81,7 +88,7 @@ update_task:
       required: true
       selector:
         select:
-          options: [daily, weekly, monthly]
+          options: [daily, weekly, monthly, yearly]
     missed_behavior:
       selector:
         select:
@@ -95,6 +102,12 @@ update_task:
     weekdays:
       selector:
         text:
+    month:
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
     day:
       selector:
         number:

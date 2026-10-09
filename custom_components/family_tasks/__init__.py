@@ -35,7 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if any(x < 0 or x > 6 for x in weekdays):
                 raise HomeAssistantError("Wochentage müssen 0 bis 6 sein")
             await store.add_task(call.data["title"].strip(), person["id"], call.data["frequency"],
-                                 weekdays, call.data.get("day"), call.data.get("start").isoformat() if call.data.get("start") else None, call.data.get("time_of_day", "anytime"), call.data.get("missed_behavior", "discard"))
+                                 weekdays, call.data.get("day"), call.data.get("start").isoformat() if call.data.get("start") else None, call.data.get("time_of_day", "anytime"), call.data.get("missed_behavior", "discard"), call.data.get("month"))
         async def update_task(call):
             person = next((p for p in store.data["people"] if p["name"].casefold() == call.data["person"].strip().casefold()), None)
             if not person:
@@ -44,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if any(x < 0 or x > 6 for x in weekdays):
                 raise HomeAssistantError("Wochentage müssen 0 bis 6 sein")
             await store.update_task(call.data["task_id"], call.data["title"].strip(), person["id"],
-                                    call.data["frequency"], weekdays, call.data.get("day"), call.data.get("time_of_day", "anytime"), call.data.get("missed_behavior", "archive"))
+                                    call.data["frequency"], weekdays, call.data.get("day"), call.data.get("time_of_day", "anytime"), call.data.get("missed_behavior", "archive"), call.data.get("month"))
         async def delete_task(call):
             await store.delete_task(call.data["task_id"])
         hass.services.async_register(DOMAIN, "add_person", add_person,
@@ -52,17 +52,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, "add_task", add_task,
             schema=vol.Schema({vol.Required("title"): cv.string,
                                vol.Required("person"): cv.string,
-                               vol.Required("frequency"): vol.In(["daily", "weekly", "monthly"]),
+                               vol.Required("frequency"): vol.In(["daily", "weekly", "monthly", "yearly"]),
                                vol.Optional("time_of_day", default="anytime"): vol.In(["morning", "daytime", "evening", "anytime"]),
                                vol.Optional("missed_behavior", default="discard"): vol.In(["discard", "archive", "keep"]),
                                vol.Optional("weekdays", default=""): cv.string,
                                vol.Optional("day"): vol.All(vol.Coerce(int), vol.Range(min=1, max=31)),
+                               vol.Optional("month"): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
                                vol.Optional("start"): cv.date}))
         hass.services.async_register(DOMAIN, "update_task", update_task,
             schema=vol.Schema({vol.Required("task_id"): cv.string,
                                vol.Required("title"): cv.string,
                                vol.Required("person"): cv.string,
-                               vol.Required("frequency"): vol.In(["daily", "weekly", "monthly"]),
+                               vol.Required("frequency"): vol.In(["daily", "weekly", "monthly", "yearly"]),
                                vol.Optional("time_of_day", default="anytime"): vol.In(["morning", "daytime", "evening", "anytime"]),
                                vol.Optional("missed_behavior", default="archive"): vol.In(["discard", "archive", "keep"]),
                                vol.Optional("weekdays", default=""): cv.string,
