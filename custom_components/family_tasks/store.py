@@ -11,7 +11,9 @@ def occurrence_dates(task, start, end):
         freq = task["frequency"]
         match = (freq == "daily" or
                  freq == "weekly" and current.weekday() in task["weekdays"] or
-                 freq == "monthly" and current.day == min(task["day"], monthrange(current.year, current.month)[1]))
+                 freq == "monthly" and current.day == min(task["day"], monthrange(current.year, current.month)[1]) or
+                 freq == "yearly" and current.month == task.get("month", anchor.month) and
+                 current.day == min(task.get("day", anchor.day), monthrange(current.year, current.month)[1]))
         if match:
             yield current
         current += timedelta(days=1)
@@ -29,6 +31,10 @@ class FamilyStore:
         for task in self.data.get("tasks", []):
             if "time_of_day" not in task:
                 task["time_of_day"] = "anytime"
+                changed = True
+        for task in self.data.get("tasks", []):
+            if "missed_behavior" not in task:
+                task["missed_behavior"] = "archive"  # Existing tasks retain v0.5.1 behavior.
                 changed = True
         if changed:
             await self.disk.async_save(self.data)
@@ -50,38 +56,78 @@ class FamilyStore:
         await self.save()
         return person
 
-    async def add_task(self, title, person_id, frequency, weekdays=None, day=None, start=None, time_of_day="anytime"):
+    async def add_task(self, title, person_id, frequency, weekdays=None, day=None, start=None, time_of_day="anytime", missed_behavior="discard", month=None):
         if not any(p["id"] == person_id for p in self.data["people"]):
             raise ValueError("Unbekannte Person")
         task = {"id": uuid4().hex, "title": title, "person_id": person_id,
                 "frequency": frequency, "weekdays": weekdays or [],
-                "day": day or 1, "start": start or dt_util.now().date().isoformat(),
-                "time_of_day": time_of_day}
+                "day": day or (date.fromisoformat(start).day if start and frequency == "yearly" else dt_util.now().day if frequency == "yearly" else 1),
+                "month": month or (date.fromisoformat(start).month if start else dt_util.now().month),
+                "start": start or dt_util.now().date().isoformat(),
+                "time_of_day": time_of_day, "missed_behavior": missed_behavior}
         self.data["tasks"].append(task)
         await self.rollover()
         return task
 
     async def rollover(self):
         today = dt_util.now().date()
+        today_iso = today.isoformat()
         changed = False
+        tasks_by_id = {task["id"]: task for task in self.data["tasks"]}
+        retained = []
         for instance in self.data["instances"]:
-            if instance["status"] == "open" and instance["date"] < today.isoformat():
-                instance["status"] = "missed"
-                changed = True
-        existing = {(i["task_id"], i["date"]) for i in self.data["instances"]}
+            task = tasks_by_id.get(instance["task_id"])
+            if instance["status"] == "open" and instance["date"] < today_iso and task:
+                behavior = task.get("missed_behavior", "archive")
+                if behavior == "discard":
+                    changed = True
+                    continue
+                if behavior == "archive":
+                    instance["status"] = "missed"
+                    changed = True
+                # 'keep': retain original due date and an open instance.
+            retained.append(instance)
+        self.data["instances"] = retained
+
+        existing = {(i["task_id"], i["date"]) for i in retained}
+        open_task_ids = {i["task_id"] for i in retained if i["status"] == "open"}
+        latest_dates = {}
+        for instance in retained:
+            tid = instance["task_id"]
+            latest_dates[tid] = max(instance["date"], latest_dates.get(tid, ""))
         for task in self.data["tasks"]:
             anchor = date.fromisoformat(task["start"])
-            # Backfill at most 366 days after downtime; no duplicates.
+            # Backfill at most 366 days after downtime.
             begin = max(anchor, today - timedelta(days=366))
+            behavior = task.get("missed_behavior", "archive")
             for due in occurrence_dates(task, begin, today):
                 key = (task["id"], due.isoformat())
-                if key not in existing:
-                    self.data["instances"].append({
-                        "id": uuid4().hex, "task_id": task["id"], "date": due.isoformat(),
-                        "status": "open" if due == today else "missed",
-                        "completed_at": None})
-                    existing.add(key)
-                    changed = True
+                if key in existing:
+                    continue
+                if behavior == "discard" and due < today:
+                    continue
+                if behavior == "keep":
+                    # Do not recreate past occurrences preceding a later
+                    # completed instance. Exactly one open instance per task.
+                    if due.isoformat() <= latest_dates.get(task["id"], ""):
+                        continue
+                    # Exactly one open instance per task. Historical occurrences
+                    # before the first tracked one are not backfilled.
+                    if task["id"] in open_task_ids:
+                        continue
+                    status = "open"
+                else:
+                    status = "open" if due == today else "missed"
+                self.data["instances"].append({
+                    "id": uuid4().hex, "task_id": task["id"],
+                    "date": due.isoformat(), "status": status,
+                    "completed_at": None,
+                })
+                existing.add(key)
+                latest_dates[task["id"]] = max(due.isoformat(), latest_dates.get(task["id"], ""))
+                if status == "open":
+                    open_task_ids.add(task["id"])
+                changed = True
         if changed:
             await self.save()
 
@@ -93,14 +139,17 @@ class FamilyStore:
         instance["completed_at"] = dt_util.now().isoformat() if completed else None
         await self.save()
 
-    async def update_task(self, task_id, title, person_id, frequency, weekdays=None, day=None, time_of_day="anytime"):
+    async def update_task(self, task_id, title, person_id, frequency, weekdays=None, day=None, time_of_day="anytime", missed_behavior="archive", month=None):
         task = next((t for t in self.data["tasks"] if t["id"] == task_id), None)
         if task is None:
             raise ValueError("Aufgabe nicht gefunden")
         if not any(p["id"] == person_id for p in self.data["people"]):
             raise ValueError("Person nicht gefunden")
         task.update(title=title, person_id=person_id, frequency=frequency,
-                    weekdays=weekdays or [], day=day or 1, time_of_day=time_of_day)
+                    weekdays=weekdays or [], day=day or 1, time_of_day=time_of_day,
+                    missed_behavior=missed_behavior)
+        if frequency == "yearly":
+            task["month"] = month or task.get("month") or date.fromisoformat(task["start"]).month
         # Already recorded occurrences remain historical. Only future instances
         # follow the changed recurrence; today's existing instance remains.
         await self.save()

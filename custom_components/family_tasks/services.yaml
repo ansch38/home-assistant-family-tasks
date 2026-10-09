@@ -22,6 +22,7 @@ add_task:
             - daily
             - weekly
             - monthly
+            - yearly
     time_of_day:
       selector:
         select:
@@ -34,9 +35,25 @@ add_task:
               value: evening
             - label: Ohne Zuordnung
               value: anytime
+    missed_behavior:
+      selector:
+        select:
+          options:
+            - label: Verwerfen
+              value: discard
+            - label: Archivieren
+              value: archive
+            - label: Offen lassen
+              value: keep
     weekdays:
       selector:
         text:
+    month:
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
     day:
       selector:
         number:
@@ -71,10 +88,26 @@ update_task:
       required: true
       selector:
         select:
-          options: [daily, weekly, monthly]
+          options: [daily, weekly, monthly, yearly]
+    missed_behavior:
+      selector:
+        select:
+          options:
+            - label: Verwerfen
+              value: discard
+            - label: Archivieren
+              value: archive
+            - label: Offen lassen
+              value: keep
     weekdays:
       selector:
         text:
+    month:
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
     day:
       selector:
         number:
