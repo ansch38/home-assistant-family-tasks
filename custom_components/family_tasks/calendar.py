@@ -31,9 +31,14 @@ class FamilyCalendar(CalendarEntity):
     def _events(self, start, end):
         statuses = {(i["task_id"], i["date"]): i["status"] for i in self.store.data["instances"]}
         result = []
+        today = dt_util.now().date()
+        task_by_id = {task["id"]: task for task in self.store.data["tasks"]}
         for task in self.store.data["tasks"]:
             for due in occurrence_dates(task, start, end):
-                status = statuses.get((task["id"], due.isoformat()), "planned")
+                status = statuses.get((task["id"], due.isoformat()))
+                if status is None and due < today and task.get("missed_behavior") == "discard":
+                    continue
+                status = status or "planned"
                 prefix = {"done": "✓ ", "missed": "✗ "}.get(status, "")
                 result.append(CalendarEvent(
                     start=due, end=due + timedelta(days=1),

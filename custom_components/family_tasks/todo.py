@@ -31,7 +31,8 @@ class FamilyTodo(TodoListEntity):
                      description="Wiederkehrende Familienaufgabe")
             for i in self.store.data["instances"]
             if i["status"] in ("open", "done") and i["task_id"] in tasks
-            and i["date"] == dt_util.now().date().isoformat()
+            and (i["date"] == dt_util.now().date().isoformat()
+                 or (i["status"] == "open" and i["date"] < dt_util.now().date().isoformat()))
         ]
 
     async def async_update_todo_item(self, item):

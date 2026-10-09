@@ -34,6 +34,16 @@ add_task:
               value: evening
             - label: Ohne Zuordnung
               value: anytime
+    missed_behavior:
+      selector:
+        select:
+          options:
+            - label: Verwerfen
+              value: discard
+            - label: Archivieren
+              value: archive
+            - label: Offen lassen
+              value: keep
     weekdays:
       selector:
         text:
@@ -72,6 +82,16 @@ update_task:
       selector:
         select:
           options: [daily, weekly, monthly]
+    missed_behavior:
+      selector:
+        select:
+          options:
+            - label: Verwerfen
+              value: discard
+            - label: Archivieren
+              value: archive
+            - label: Offen lassen
+              value: keep
     weekdays:
       selector:
         text:
