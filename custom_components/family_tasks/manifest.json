@@ -1,7 +1,7 @@
 {
   "domain": "family_tasks",
   "name": "Family Tasks",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "documentation": "https://github.com/ansch38/home-assistant-family-tasks",
   "requirements": [],
   "codeowners": [
