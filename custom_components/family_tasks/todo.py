@@ -31,8 +31,18 @@ class FamilyTodo(TodoListEntity):
                      description="Wiederkehrende Familienaufgabe")
             for i in self.store.data["instances"]
             if i["status"] in ("open", "done") and i["task_id"] in tasks
-            and (i["date"] == dt_util.now().date().isoformat()
-                 or (i["status"] == "open" and i["date"] < dt_util.now().date().isoformat()))
+            and (
+                i["date"] == dt_util.now().date().isoformat()
+                or (i["status"] == "open" and i["date"] < dt_util.now().date().isoformat())
+                # A previously overdue item completed today must remain in
+                # the To-do entity for the rest of the day. Otherwise HA
+                # rejects undoing completion because its UID vanished.
+                or (
+                    i["status"] == "done"
+                    and i["date"] < dt_util.now().date().isoformat()
+                    and (i.get("completed_at") or "")[:10] == dt_util.now().date().isoformat()
+                )
+            )
         ]
 
     async def async_update_todo_item(self, item):
