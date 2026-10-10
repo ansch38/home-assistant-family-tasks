@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from homeassistant.components.sensor import SensorEntity
 from .const import DOMAIN
 
@@ -32,5 +34,8 @@ class FamilyCatalog(SensorEntity):
         return len(self.store.data["tasks"])
     @property
     def extra_state_attributes(self):
-        return {"people": self.store.data["people"], "tasks": self.store.data["tasks"],
-                "history": self.store.data["instances"][-500:]}
+        return {
+            "people": deepcopy(self.store.data["people"]),
+            "tasks": deepcopy(self.store.data["tasks"]),
+            "history": deepcopy(self.store.data["instances"][-500:]),
+        }
