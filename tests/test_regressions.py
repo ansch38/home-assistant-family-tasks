@@ -146,7 +146,22 @@ class StoreTests(unittest.IsolatedAsyncioTestCase):
         return await self.store.add_task("Testaufgabe", self.person["id"],
                                          kwargs.pop("frequency", "daily"), **kwargs)
 
+    async def test_future_task_persisted_and_notified_without_instances(self):
+        listener = Mock()
+        self.store.subscribe(listener)
+        task = await self.task(start="2026-12-01")
+        restored = STORE.FamilyStore(self.hass)
+        await restored.load()
+        self.assertEqual(restored.data["tasks"], [task])
+        self.assertEqual(restored.data["instances"], [])
+        listener.assert_called_once_with()
 
+    async def test_weekly_task_not_due_today_survives_reload(self):
+        task = await self.task(frequency="weekly", weekdays=[0])
+        restored = STORE.FamilyStore(self.hass)
+        await restored.load()
+        self.assertEqual(restored.data["tasks"], [task])
+        self.assertEqual(restored.data["instances"], [])
 
     async def test_task_due_today_saved_and_notified_once(self):
         listener = Mock()
@@ -265,6 +280,28 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def call(self, service, **data):
         await self.hass.handlers[("family_tasks", service)](types.SimpleNamespace(data=data))
 
+    async def test_reload_services_use_current_store(self):
+        await INTEGRATION.async_setup_entry(self.hass, self.entry)
+        await self.call("add_person", name="Testperson")
+        old = self.hass.data["family_tasks"][self.entry.entry_id]
+        self.assertTrue(await self.unload())
+        self.assertEqual(self.hass.handlers, {})
+        self.assertEqual(self.hass.timers, [])
+        await INTEGRATION.async_setup_entry(self.hass, self.entry)
+        current = self.hass.data["family_tasks"][self.entry.entry_id]
+        self.assertIsNot(current, old)
+        old_data = deepcopy(old.data)
+        await self.call("add_person", name="Weitere Testperson")
+        await self.call("add_task", title="Test", person="Testperson", frequency="daily")
+        task_id = current.data["tasks"][0]["id"]
+        await self.call("update_task", task_id=task_id, title="Geaendert", person="Testperson", frequency="daily")
+        self.assertEqual(current.data["tasks"][0]["title"], "Geaendert")
+        await self.call("delete_task", task_id=task_id)
+        self.assertEqual(current.data["tasks"], [])
+        self.assertEqual(len(current.data["people"]), 2)
+        self.assertEqual(old.data, old_data)
+        self.assertEqual(len(self.hass.timers), 1)
+        self.hass.http.async_register_static_paths.assert_awaited_once()
 
     async def test_failed_unload_retains_services_and_store(self):
         await INTEGRATION.async_setup_entry(self.hass, self.entry)

@@ -124,6 +124,22 @@ Never commit tokens, passwords, `secrets.yaml`, `.storage`, databases, backups, 
 
 ## Development status
 
+### Regression tests
+
+Run the dependency-free Python regression suite from the repository root:
+
+```shell
+python -B -m unittest discover -s tests -v
+```
+
+The tests use synthetic household data, a controlled clock, and in-memory storage.
+They cover recurrence boundaries, unfinished-task behavior, completion and undo,
+legacy defaults, persistence without a current occurrence, and service rebinding
+after an integration reload. Home Assistant APIs are replaced with test doubles;
+these tests do not validate Home Assistant's actual storage, HTTP registration,
+service schemas, or frontend. A running Home Assistant smoke test is still needed
+to verify those boundaries. No real `.storage` files are read or written.
+
 Family Tasks is under active development. Until version 1.0, functionality and internal data structures may change. Feedback, bug reports, and suggestions are welcome through GitHub Issues.
 
 ## License

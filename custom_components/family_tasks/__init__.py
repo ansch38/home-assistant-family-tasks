@@ -11,6 +11,8 @@ from homeassistant.components.http import StaticPathConfig
 from pathlib import Path
 
 PLATFORMS = ["todo", "calendar", "sensor"]
+SERVICES = ("add_person", "add_task", "update_task", "delete_task")
+STATIC_PATH_REGISTERED = "_static_path_registered"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     store = FamilyStore(hass)
@@ -21,9 +23,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await store.rollover()
     unsub = async_track_time_interval(hass, tick, timedelta(minutes=5))
     entry.async_on_unload(unsub)
-    await hass.http.async_register_static_paths([StaticPathConfig(
-        "/family_tasks/family-tasks-card.js", str(Path(__file__).parent / "family-tasks-card.js"), False
-    )])
+    # Static paths live for the lifetime of HA, including integration reloads.
+    if not hass.data[DOMAIN].get(STATIC_PATH_REGISTERED):
+        await hass.http.async_register_static_paths([StaticPathConfig(
+            "/family_tasks/family-tasks-card.js", str(Path(__file__).parent / "family-tasks-card.js"), False
+        )])
+        hass.data[DOMAIN][STATIC_PATH_REGISTERED] = True
     if not hass.services.has_service(DOMAIN, "add_person"):
         async def add_person(call):
             await store.add_person(call.data["name"].strip())
@@ -76,5 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass, entry):
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
+        for service in SERVICES:
+            hass.services.async_remove(DOMAIN, service)
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return ok
