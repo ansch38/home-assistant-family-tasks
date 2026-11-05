@@ -66,7 +66,10 @@ class FamilyStore:
                 "start": start or dt_util.now().date().isoformat(),
                 "time_of_day": time_of_day, "missed_behavior": missed_behavior}
         self.data["tasks"].append(task)
-        await self.rollover()
+        # Rollover saves only when instances change. Persist the definition even
+        # when its first occurrence is in the future or not due today.
+        if not await self.rollover():
+            await self.save()
         return task
 
     async def rollover(self):
@@ -130,6 +133,7 @@ class FamilyStore:
                 changed = True
         if changed:
             await self.save()
+        return changed
 
     async def complete(self, uid, completed):
         instance = next((i for i in self.data["instances"] if i["id"] == uid), None)
