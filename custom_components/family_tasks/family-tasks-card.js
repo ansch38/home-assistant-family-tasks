@@ -48,8 +48,7 @@ class FamilyTasksBoardCard extends HTMLElement {
     const entity=this.config?.catalog_entity||'sensor.family_tasks_catalog';
     const state=hass.states[entity];
     const stamp=JSON.stringify(state?.attributes||{});
-    const day=new Date().toLocaleDateString('en-CA');
-    if(stamp!==this._stamp||day!==this._day){this._stamp=stamp;this._day=day;this.render();}
+    if(stamp!==this._stamp){this._stamp=stamp;this.render();}
   }
   getCardSize(){return 8;}
   render(){
@@ -57,11 +56,13 @@ class FamilyTasksBoardCard extends HTMLElement {
     const catalog=this._hass?.states[this.config?.catalog_entity||'sensor.family_tasks_catalog'];
     const people=catalog?.attributes.people||[];
     const tasks=catalog?.attributes.tasks||[];
-    const history=catalog?.attributes.history||[];
+    const today=catalog?.attributes.today||'';
+    const instances=catalog?.attributes.current_instances||[];
+    const compatible=Array.isArray(catalog?.attributes.current_instances)&&Boolean(today);
     const taskMap=new Map(tasks.map(t=>[t.id,t]));
     const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','"':'&quot;',"'":'&#39;'}[c]));
-    const today=new Date().toLocaleDateString('en-CA');
-    const current=history.filter(i=>(i.date===today || (i.date<today && i.status==='open')) && taskMap.has(i.task_id) && (i.status==='open'||i.status==='done'));
+    const current=instances.filter(i=>taskMap.has(i.task_id));
+    const dateLabel=today?new Date(today+'T12:00:00Z').toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}):'';
     const grouped=new Map(people.map(p=>[p.id,[]]));
     current.forEach(i=>grouped.get(taskMap.get(i.task_id).person_id)?.push({...i,task:taskMap.get(i.task_id)}));
     const cols=Number(this.config?.columns||0);
@@ -100,8 +101,8 @@ class FamilyTasksBoardCard extends HTMLElement {
       @media(max-width:700px){.grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))!important}.person{padding:13px}}
       @media(max-width:480px){ha-card{padding:12px}.grid{grid-template-columns:1fr!important;gap:12px}.board-top{margin-bottom:14px}.task{min-height:56px}}
       @media(prefers-reduced-motion:reduce){.task,.progress-fill{transition:none}}
-    </style><ha-card><header class="board-top"><div><h2>${esc(this.config?.title||'Unsere Familienaufgaben')}</h2><div class="sub">${esc(new Date().toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long',year:'numeric'}))}</div></div><div class="today-pill">Heute im Blick</div></header>
-    ${!catalog?'<p class="error">Katalogsensor nicht gefunden.</p>':''}
+    </style><ha-card><header class="board-top"><div><h2>${esc(this.config?.title||'Unsere Familienaufgaben')}</h2><div class="sub">${esc(dateLabel)}</div></div><div class="today-pill">Heute im Blick</div></header>
+    ${!catalog?'<p class="error">Katalogsensor nicht gefunden.</p>':!compatible?'<p class="error">Bitte die Family-Tasks-Integration aktualisieren und neu laden.</p>':''}
     <div class="grid">${people.map(person=>{
       const items=grouped.get(person.id)||[];
       const done=items.filter(i=>i.status==='done').length;
@@ -120,7 +121,11 @@ class FamilyTasksBoardCard extends HTMLElement {
       }catch(e){
         input.checked=!checked;
         this.shadowRoot.querySelector('#board-error').textContent='Speichern fehlgeschlagen: '+(e.message||String(e));
-      }finally{this.busy.delete(uid);input.disabled=false;}
+      }finally{
+        this.busy.delete(uid);input.disabled=false;
+        // A catalog update can replace the checkbox while the call is pending.
+        this.shadowRoot.querySelectorAll('input[data-uid]').forEach(current=>{if(current.dataset.uid===uid)current.disabled=false;});
+      }
     });
   }
 }

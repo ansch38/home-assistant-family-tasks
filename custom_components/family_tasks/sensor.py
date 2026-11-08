@@ -34,7 +34,10 @@ class FamilyCatalog(SensorEntity):
         return len(self.store.data["tasks"])
     @property
     def extra_state_attributes(self):
+        today = self.store.today
         return {
+            "today": today,
+            "current_instances": deepcopy(self.store.current_instances(today)),
             "people": deepcopy(self.store.data["people"]),
             "tasks": deepcopy(self.store.data["tasks"]),
             "history": deepcopy(self.store.data["instances"][-500:]),

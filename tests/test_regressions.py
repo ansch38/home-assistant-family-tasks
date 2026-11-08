@@ -284,6 +284,92 @@ class StoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.disk.saves, before)
 
 
+class CurrentViewTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = StoreTests.asyncSetUp
+    task = StoreTests.task
+
+    def assert_views(self, expected_ids):
+        catalog = SENSOR.FamilyCatalog(self.store, "test_entry")
+        todo = TODO.FamilyTodo(self.store, "test_entry")
+        attributes = catalog.extra_state_attributes
+        self.assertEqual(attributes["today"], self.now.date().isoformat())
+        self.assertEqual([i["id"] for i in attributes["current_instances"]], expected_ids)
+        self.assertEqual([i.uid for i in todo.todo_items], expected_ids)
+        return attributes, todo
+
+    async def test_catalog_and_todo_select_same_current_instances(self):
+        task = await self.task()
+        def instance(uid, due, status, completed_at=None, task_id=task["id"]):
+            return dict(id=uid, task_id=task_id, date=due, status=status, completed_at=completed_at)
+        self.store.data["instances"] = [
+            instance("today_open", "2026-11-04", "open"),
+            instance("today_done", "2026-11-04", "done", "2026-11-04T10:00:00+00:00"),
+            instance("overdue", "2026-10-01", "open"),
+            instance("overdue_done_today", "2026-10-01", "done", "2026-11-04T10:00:00+00:00"),
+            instance("old_done", "2026-10-01", "done", "2026-11-03T10:00:00+00:00"),
+            instance("missed", "2026-11-04", "missed"),
+            instance("future", "2026-11-05", "open"),
+            instance("deleted_task", "2026-11-04", "open", task_id="deleted"),
+        ]
+        self.assert_views(["today_open", "today_done", "overdue", "overdue_done_today"])
+
+    async def test_old_open_instance_outside_history_limit_remains_actionable(self):
+        task = await self.task(start="2026-01-01", missed_behavior="keep")
+        oldest = deepcopy(self.store.data["instances"][0])
+        self.store.data["instances"].extend(
+            dict(id=f"history-{index}", task_id=task["id"], date="2026-10-01", status="done", completed_at="2026-10-01T12:00:00+00:00")
+            for index in range(600)
+        )
+        attributes, _ = self.assert_views([oldest["id"]])
+        self.assertEqual(len(attributes["history"]), 500)
+        self.assertNotIn(oldest, attributes["history"])
+        attributes["current_instances"][0]["status"] = "done"
+        self.assertEqual(self.store.data["instances"][0]["status"], "open")
+
+    async def test_overdue_completion_and_undo_retain_same_uid_in_both_views(self):
+        await self.task(start="2026-11-01", missed_behavior="keep")
+        uid = self.store.data["instances"][0]["id"]
+        await self.store.complete(uid, True)
+        attributes, todo = self.assert_views([uid])
+        self.assertEqual(attributes["current_instances"][0]["status"], "done")
+        self.assertEqual(todo.todo_items[0].status, "completed")
+        await todo.async_update_todo_item(types.SimpleNamespace(uid=uid, status="needs_action"))
+        attributes, _ = self.assert_views([uid])
+        self.assertEqual(attributes["current_instances"][0]["status"], "open")
+
+    async def test_midnight_notifies_without_disk_changes_and_expires_done_items(self):
+        # Annual task has no next-day occurrence to force a save/notification.
+        await self.task(frequency="yearly", month=11, day=4)
+        uid = self.store.data["instances"][0]["id"]
+        await self.store.complete(uid, True)
+        self.assert_views([uid])
+        listener = Mock()
+        self.store.subscribe(listener)
+        saves = self.store.disk.saves
+        self.now += timedelta(days=1)
+        self.assertFalse(await self.store.rollover())
+        listener.assert_called_once_with()
+        self.assertEqual(self.store.disk.saves, saves)
+        self.assert_views([])
+        await self.store.rollover()
+        listener.assert_called_once_with()
+
+    async def test_midnight_refreshes_empty_catalog(self):
+        listener = Mock()
+        self.store.subscribe(listener)
+        self.now += timedelta(days=1)
+        await self.store.rollover()
+        listener.assert_called_once_with()
+        self.assert_views([])
+
+    async def test_home_assistant_day_can_differ_from_utc_day(self):
+        self.now = datetime(2026, 11, 5, 0, 15, tzinfo=timezone(timedelta(hours=1)))
+        self.assertEqual(self.now.astimezone(timezone.utc).date(), date(2026, 11, 4))
+        await self.task()
+        uid = self.store.data["instances"][0]["id"]
+        self.assert_views([uid])
+        await self.store.complete(uid, True)
+        self.assert_views([uid])
 
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):

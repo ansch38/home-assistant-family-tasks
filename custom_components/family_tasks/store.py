@@ -24,6 +24,29 @@ class FamilyStore:
         self.disk = Store(hass, 1, "family_tasks.v1")
         self.data = {"people": [], "tasks": [], "instances": []}
         self.listeners = set()
+        self._last_notified_date = self.today
+
+    @property
+    def today(self):
+        """Current day in Home Assistant's configured time zone."""
+        return dt_util.now().date().isoformat()
+
+    def current_instances(self, today=None):
+        """Select the same actionable occurrences for To-do and the board."""
+        today = today or self.today
+        task_ids = {task["id"] for task in self.data["tasks"]}
+        return [
+            instance for instance in self.data["instances"]
+            if instance["task_id"] in task_ids
+            and instance["status"] in ("open", "done")
+            and (
+                instance["date"] == today
+                or instance["date"] < today and (
+                    instance["status"] == "open"
+                    or (instance.get("completed_at") or "")[:10] == today
+                )
+            )
+        ]
 
     async def load(self):
         self.data = await self.disk.async_load() or self.data
@@ -41,6 +64,10 @@ class FamilyStore:
 
     async def save(self):
         await self.disk.async_save(self.data)
+        self._notify_listeners()
+
+    def _notify_listeners(self):
+        self._last_notified_date = self.today
         for callback in tuple(self.listeners):
             callback()
 
@@ -133,6 +160,10 @@ class FamilyStore:
                 changed = True
         if changed:
             await self.save()
+        elif today_iso != self._last_notified_date:
+            # Even without new occurrences, yesterday's completions disappear
+            # and the catalog's day must advance on the next five-minute tick.
+            self._notify_listeners()
         return changed
 
     async def complete(self, uid, completed):

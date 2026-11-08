@@ -1,7 +1,5 @@
 from datetime import date
-from homeassistant.util import dt as dt_util
 from homeassistant.components.todo import TodoListEntity, TodoItem, TodoItemStatus, TodoListEntityFeature
-from homeassistant.helpers.entity import Entity
 from .const import DOMAIN
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -29,20 +27,7 @@ class FamilyTodo(TodoListEntity):
                      status=TodoItemStatus.COMPLETED if i["status"] == "done" else TodoItemStatus.NEEDS_ACTION,
                      due=date.fromisoformat(i["date"]),
                      description="Wiederkehrende Familienaufgabe")
-            for i in self.store.data["instances"]
-            if i["status"] in ("open", "done") and i["task_id"] in tasks
-            and (
-                i["date"] == dt_util.now().date().isoformat()
-                or (i["status"] == "open" and i["date"] < dt_util.now().date().isoformat())
-                # A previously overdue item completed today must remain in
-                # the To-do entity for the rest of the day. Otherwise HA
-                # rejects undoing completion because its UID vanished.
-                or (
-                    i["status"] == "done"
-                    and i["date"] < dt_util.now().date().isoformat()
-                    and (i.get("completed_at") or "")[:10] == dt_util.now().date().isoformat()
-                )
-            )
+            for i in self.store.current_instances()
         ]
 
     async def async_update_todo_item(self, item):
