@@ -1,7 +1,7 @@
 class FamilyTasksBaseCard extends HTMLElement {
-  constructor() { super(); this.attachShadow({mode:'open'}); this.editId=''; this.message=''; }
+  constructor() { super(); this.attachShadow({mode:'open'}); this.editId=''; this.message=''; this.saving=false; this.behaviorChosen=false; }
   setConfig(config) { this.config=config; this.render(); }
-  set hass(hass) { this._hass=hass; const state=hass.states[this.config?.catalog_entity || 'sensor.family_tasks_catalog']; const stamp=JSON.stringify(state?.attributes || {}); if(stamp!==this._stamp){this._stamp=stamp;this.render();} }
+  set hass(hass) { this._hass=hass; const state=hass.states[this.config?.catalog_entity || 'sensor.family_tasks_catalog']; const stamp=JSON.stringify(state?.attributes || {}); if(stamp!==this._stamp){this._stamp=stamp;if(!this.saving)this.render();} }
   getCardSize(){return this.mode === 'people' ? 3 : 6;}
   render(){
     if(!this.shadowRoot)return;
@@ -11,24 +11,78 @@ class FamilyTasksBaseCard extends HTMLElement {
     const peopleOnly=this.mode==='people';
     const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const personName=id=>people.find(p=>p.id===id)?.name || '?';
-    const option=(value,label,selected)=>`<option value="${esc(value)}" ${value===selected?'selected':''}>${esc(label)}</option>`;
+    const option=(value,label,selected,disabled=false)=>`<option value="${esc(value)}" ${value===selected?'selected':''} ${disabled?'disabled':''}>${esc(label)}</option>`;
+    const frequencies=[['daily','Täglich'],['weekly','Wöchentlich'],['monthly','Monatlich'],['yearly','Jährlich'],['once','Einmalig']];
+    const formatDate=value=>new Date(value+'T12:00:00Z').toLocaleDateString('de-DE',{timeZone:'UTC'});
     this.shadowRoot.innerHTML=`<style>
       :host{display:block;font-family:var(--primary-font-family,Arial)}ha-card{display:block;padding:18px;color:var(--primary-text-color);background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:var(--ha-card-border-radius,12px);box-shadow:var(--ha-card-box-shadow,0 2px 4px #0002)}h2{margin:0 0 14px;font-size:20px}h3{font-size:16px}label{display:block;margin:10px 0 4px}input,select{box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--divider-color,#aaa);border-radius:7px;background:var(--card-background-color,#fff);color:var(--primary-text-color)}button{cursor:pointer;border:0;border-radius:8px;padding:10px 13px;margin:6px 5px 0 0;background:var(--primary-color,#03a9f4);color:white}button.secondary{background:var(--secondary-background-color,#ddd);color:var(--primary-text-color)}.item{border-top:1px solid var(--divider-color,#ddd);padding:10px 0}.small{font-size:12px;color:var(--secondary-text-color)}.days{display:flex;flex-wrap:wrap;gap:9px}.days label{margin:0}.days input{width:auto}.error{color:var(--error-color,#d32f2f)}
       </style><ha-card><h2>${peopleOnly?'Familienmitglieder verwalten':'Familienaufgaben verwalten'}</h2>${!catalog?'<p class="error">Katalogsensor nicht gefunden. Integration und Dashboard-Ressource prüfen.</p>':''}
       ${peopleOnly?`<form id="person"><label>Familienmitglied hinzufügen</label><input name="name" maxlength="60" required placeholder="Name"><button>Person hinzufügen</button></form><h3>Vorhandene Personen</h3>${people.length?people.map(p=>`<div class="item">${esc(p.name)}</div>`).join(''):'<p>Noch keine Personen angelegt.</p>'}<p class="small">Personen können in dieser Version hinzugefügt werden. Umbenennen und Löschen ist noch nicht vorgesehen.</p>`:''}
-      ${peopleOnly?'':`<hr><h3>${editing?'Aufgabe bearbeiten':'Neue Aufgabe'}</h3><form id="task"><label>Aufgabe</label><input name="title" maxlength="120" required value="${esc(editing?.title)}" placeholder="z. B. Spülmaschine ausräumen"><label>Zuständig</label><select name="person" required><option value="">Bitte wählen</option>${people.map(p=>option(p.name,p.name,personName(editing?.person_id))).join('')}</select><label>Tageszeit</label><select name="time_of_day">${[['morning','🌅 Morgens'],['daytime','☀️ Tagsüber'],['evening','🌙 Abends'],['anytime','Ohne Zuordnung']].map(([v,l])=>option(v,l,editing?.time_of_day || 'anytime')).join('')}</select><label>Wenn nicht erledigt</label><select name="missed_behavior">${[['discard','Verwerfen'],['archive','Archivieren'],['keep','Offen lassen']].map(([v,l])=>option(v,l,editing?.missed_behavior || (editing?'archive':'discard'))).join('')}</select><label>Wiederholung</label><select name="frequency">${[['daily','Täglich'],['weekly','Wöchentlich'],['monthly','Monatlich'],['yearly','Jährlich']].map(([v,l])=>option(v,l,editing?.frequency || 'daily')).join('')}</select><div id="weekly"><label>Wochentage</label><div class="days">${['Mo','Di','Mi','Do','Fr','Sa','So'].map((d,i)=>`<label><input type="checkbox" name="weekday" value="${i}" ${editing?.weekdays?.includes(i)?'checked':''}>${d}</label>`).join('')}</div></div><div id="monthly"><label>Tag des Monats</label><select name="day">${Array.from({length:31},(_,i)=>option(String(i+1),String(i+1),String(editing?.day || 1))).join('')}</select></div><div id="yearly"><label>Jährlich am</label><select name="year_month">${['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'].map((name,i)=>option(String(i+1),name,String(editing?.month || (editing?.start ? Number(editing.start.slice(5,7)) : new Date().getMonth()+1)))) .join('')}</select><label>Tag</label><select name="year_day">${Array.from({length:31},(_,i)=>option(String(i+1),String(i+1),String(editing?.frequency === 'yearly' ? editing?.day : new Date().getDate()))).join('')}</select></div><button ${!people.length?'disabled':''}>${editing?'Änderungen speichern':'Aufgabe anlegen'}</button>${editing?'<button type="button" class="secondary" id="cancel">Abbrechen</button>':''}</form><p id="message" role="status">${esc(this.message)}</p><hr><h3>Aufgabendefinitionen</h3>${tasks.length?tasks.map(t=>`<div class="item"><b>${esc(t.title)}</b><div class="small">${esc(personName(t.person_id))} · ${esc(({morning:'🌅 Morgens',daytime:'☀️ Tagsüber',evening:'🌙 Abends',anytime:'Ohne Zuordnung'})[t.time_of_day||'anytime'])} · ${esc(t.frequency)}</div><button class="secondary" data-edit="${esc(t.id)}">Bearbeiten</button><button class="secondary" data-delete="${esc(t.id)}">Löschen</button></div>`).join(''):'<p>Noch keine Aufgaben angelegt.</p>'}`}</ha-card>`;
+      ${peopleOnly?'':`<hr><h3>${editing?'Aufgabe bearbeiten':'Neue Aufgabe'}</h3>
+      <form id="task">
+        <label>Aufgabe</label><input name="title" maxlength="120" required value="${esc(editing?.title)}" placeholder="z. B. Spülmaschine ausräumen">
+        <label>Zuständig</label><select name="person" required><option value="">Bitte wählen</option>${people.map(p=>option(p.name,p.name,personName(editing?.person_id))).join('')}</select>
+        <label>Tageszeit</label><select name="time_of_day">${[['morning','🌅 Morgens'],['daytime','☀️ Tagsüber'],['evening','🌙 Abends'],['anytime','Ohne Zuordnung']].map(([v,l])=>option(v,l,editing?.time_of_day || 'anytime')).join('')}</select>
+        <label>Wenn nicht erledigt</label><select name="missed_behavior">${[['discard','Verwerfen'],['archive','Archivieren'],['keep','Offen lassen']].map(([v,l])=>option(v,l,editing?.missed_behavior || (editing?.frequency==='once'?'keep':editing?'archive':'discard'))).join('')}</select>
+        <label>Wiederholung</label><select name="frequency" ${editing?.frequency==='once'?'disabled':''}>${frequencies.map(([v,l])=>option(v,l,editing?.frequency || 'daily',Boolean(editing)&&((v==='once')!==(editing.frequency==='once')))).join('')}</select>
+        ${editing?'<p class="small">Ein Wechsel zwischen einmalig und wiederkehrend ist nicht möglich.</p>':''}
+        <div id="once"><label>Fällig am</label><input type="date" name="start" value="${esc(editing?.frequency==='once'?editing.start:'')}" ${editing?.date_locked?'readonly':''}>
+          ${editing?.date_locked?'<p class="small">Erledigte und archivierte Termine können nicht verschoben werden.</p>':''}
+        </div>
+        <div id="weekly"><label>Wochentage</label><div class="days">${['Mo','Di','Mi','Do','Fr','Sa','So'].map((d,i)=>`<label><input type="checkbox" name="weekday" value="${i}" ${editing?.weekdays?.includes(i)?'checked':''}>${d}</label>`).join('')}</div></div>
+        <div id="monthly"><label>Tag des Monats</label><select name="day">${Array.from({length:31},(_,i)=>option(String(i+1),String(i+1),String(editing?.day || 1))).join('')}</select></div>
+        <div id="yearly"><label>Jährlich am</label><select name="year_month">${['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'].map((name,i)=>option(String(i+1),name,String(editing?.month || (editing?.start ? Number(editing.start.slice(5,7)) : new Date().getMonth()+1)))).join('')}</select><label>Tag</label><select name="year_day">${Array.from({length:31},(_,i)=>option(String(i+1),String(i+1),String(editing?.frequency === 'yearly' ? editing?.day : new Date().getDate()))).join('')}</select></div>
+        <button type="submit" id="save-task" ${!people.length||this.saving?'disabled':''}>${editing?'Änderungen speichern':'Aufgabe anlegen'}</button>
+        ${editing?'<button type="button" class="secondary" id="cancel">Abbrechen</button>':''}
+      </form><p id="message" role="status">${esc(this.message)}</p><hr><h3>Aufgabendefinitionen</h3>
+      ${tasks.length?tasks.map(t=>`<div class="item"><b>${esc(t.title)}</b><div class="small">${esc(personName(t.person_id))} · ${esc(({morning:'🌅 Morgens',daytime:'☀️ Tagsüber',evening:'🌙 Abends',anytime:'Ohne Zuordnung'})[t.time_of_day||'anytime'])} · ${esc(frequencies.find(([v])=>v===t.frequency)?.[1]||t.frequency)}${t.frequency==='once'?` · Fällig am ${esc(formatDate(t.start))}`:''}</div><button class="secondary" data-edit="${esc(t.id)}">Bearbeiten</button><button class="secondary" data-delete="${esc(t.id)}">Löschen</button></div>`).join(''):'<p>Noch keine Aufgaben angelegt.</p>'}`}</ha-card>`;
     const personForm=this.shadowRoot.querySelector('#person');
     if(personForm)personForm.onsubmit=async e=>{e.preventDefault();const name=e.target.elements.name.value.trim();if(name)await this.call('add_person',{name});};
     if(peopleOnly)return;
     const form=this.shadowRoot.querySelector('#task'), freq=form.elements.frequency;
-    const toggle=()=>{this.shadowRoot.querySelector('#weekly').hidden=freq.value!=='weekly';this.shadowRoot.querySelector('#monthly').hidden=freq.value!=='monthly';this.shadowRoot.querySelector('#yearly').hidden=freq.value!=='yearly';};freq.addEventListener('change',toggle);toggle();
-    form.onsubmit=async e=>{e.preventDefault();const f=e.target,frequency=f.elements.frequency.value;const weekdays=[...f.querySelectorAll('[name=weekday]:checked')].map(x=>x.value).join(',');if(frequency==='weekly'&&!weekdays){this.note('Bitte mindestens einen Wochentag auswählen.');return;}const data={title:f.elements.title.value.trim(),person:f.elements.person.value,frequency,time_of_day:f.elements.time_of_day.value,missed_behavior:f.elements.missed_behavior.value};if(frequency==='weekly')data.weekdays=weekdays;if(frequency==='monthly')data.day=Number(f.elements.day.value);if(frequency==='yearly'){data.month=Number(f.elements.year_month.value);data.day=Number(f.elements.year_day.value);}if(this.editId)data.task_id=this.editId;await this.call(this.editId?'update_task':'add_task',data);};
-    this.shadowRoot.querySelector('#cancel')?.addEventListener('click',()=>{this.editId='';this.render();});
-    this.shadowRoot.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{this.editId=b.dataset.edit;this.message='';this.render();});
+    const toggle=()=>{
+      for(const value of ['once','weekly','monthly','yearly'])this.shadowRoot.querySelector('#'+value).hidden=freq.value!==value;
+      form.elements.start.required=freq.value==='once';
+      form.elements.start.disabled=freq.value!=='once';
+    };
+    form.elements.missed_behavior.addEventListener('change',()=>{this.behaviorChosen=true;});
+    freq.addEventListener('change',()=>{
+      if(!editing&&!this.behaviorChosen)form.elements.missed_behavior.value=freq.value==='once'?'keep':'discard';
+      toggle();
+    });toggle();
+    form.onsubmit=async e=>{
+      e.preventDefault();if(this.saving)return;
+      const f=e.target,frequency=f.elements.frequency.value;
+      const weekdays=[...f.querySelectorAll('[name=weekday]:checked')].map(x=>x.value).join(',');
+      if(editing&&((frequency==='once')!==(editing.frequency==='once'))){this.note('Ein Wechsel zwischen einmalig und wiederkehrend ist nicht möglich.');return;}
+      if(frequency==='weekly'&&!weekdays){this.note('Bitte mindestens einen Wochentag auswählen.');return;}
+      if(frequency==='once'&&(!/^\d{4}-\d{2}-\d{2}$/.test(f.elements.start.value)||f.elements.start.checkValidity?.()===false)){this.note('Bitte ein gültiges Fälligkeitsdatum auswählen.');return;}
+      const data={title:f.elements.title.value.trim(),person:f.elements.person.value,frequency,time_of_day:f.elements.time_of_day.value,missed_behavior:f.elements.missed_behavior.value};
+      if(frequency==='once')data.start=f.elements.start.value;
+      if(frequency==='weekly')data.weekdays=weekdays;
+      if(frequency==='monthly')data.day=Number(f.elements.day.value);
+      if(frequency==='yearly'){data.month=Number(f.elements.year_month.value);data.day=Number(f.elements.year_day.value);}
+      if(this.editId)data.task_id=this.editId;
+      await this.call(this.editId?'update_task':'add_task',data);
+    };
+    this.shadowRoot.querySelector('#cancel')?.addEventListener('click',()=>{this.editId='';this.behaviorChosen=false;this.render();});
+    this.shadowRoot.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{if(this.saving)return;this.editId=b.dataset.edit;this.behaviorChosen=false;this.message='';this.render();});
     this.shadowRoot.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(confirm('Aufgabendefinition löschen? Historische Einträge bleiben gespeichert.'))await this.call('delete_task',{task_id:b.dataset.delete});});
   }
   note(message){this.message=message;const el=this.shadowRoot.querySelector('#message');if(el)el.textContent=message;}
-  async call(action,data){try{await this._hass.callService('family_tasks',action,data);this.editId='';this.note('Gespeichert.');}catch(e){this.note('Fehler: '+(e.message||String(e)));}}
+  setBusy(){
+    const noPeople=!(this._hass?.states[this.config?.catalog_entity||'sensor.family_tasks_catalog']?.attributes.people||[]).length;
+    this.shadowRoot.querySelectorAll('button').forEach(button=>{button.disabled=this.saving||(button.id==='save-task'&&noPeople);});
+  }
+  async call(action,data){
+    if(this.saving)return;
+    this.saving=true;this.setBusy();
+    try{
+      await this._hass.callService('family_tasks',action,data);
+      this.editId='';this.behaviorChosen=false;this.message='Gespeichert.';this.saving=false;this.render();
+    }catch(e){this.note('Fehler: '+(e.message||String(e)));}
+    finally{this.saving=false;this.setBusy();}
+  }
 }
 class FamilyTasksCard extends FamilyTasksBaseCard { get mode(){return 'tasks';} }
 class FamilyTasksPeopleCard extends FamilyTasksBaseCard { get mode(){return 'people';} }

@@ -10,12 +10,14 @@ class ShadowRoot {
     this.error = {textContent: ''};
     this.inputs = [];
     this.sections = {};
-    const field = value => ({value, addEventListener() {}});
+    const field = value => ({value, listeners: {}, addEventListener(name, callback) {this.listeners[name]=callback;}, change() {this.listeners.change?.();}});
+    this.saveButton = {id:'save-task', disabled:false};
     this.form = {
       elements: {
         frequency: field('yearly'), title: field('Edited annual task'),
         person: field('Testperson'), time_of_day: field('evening'),
         missed_behavior: field('keep'), year_month: field('2'), year_day: field('29'),
+        start: field(''),
       },
       querySelectorAll() {return [];},
     };
@@ -26,11 +28,11 @@ class ShadowRoot {
       .map(([, uid, attributes]) => ({dataset: {uid}, checked: attributes.includes('checked'), disabled: attributes.includes('disabled')}));
   }
   get innerHTML() {return this.html;}
-  querySelectorAll(selector) {return selector === 'input[data-uid]' ? this.inputs : [];}
+  querySelectorAll(selector) {return selector === 'input[data-uid]' ? this.inputs : selector === 'button' ? [this.saveButton] : [];}
   querySelector(selector) {
     if (selector === '#board-error' || selector === '#message') return this.error;
     if (selector === '#task') return this.form;
-    if (['#weekly', '#monthly', '#yearly'].includes(selector)) return this.sections[selector] ||= {};
+    if (['#once', '#weekly', '#monthly', '#yearly'].includes(selector)) return this.sections[selector] ||= {};
     return null;
   }
 }
@@ -164,4 +166,87 @@ test('yearly edit submits month and day through the management card', async () =
   assert.equal(calls[0][2].task_id, 't');
   assert.equal(calls[0][2].month, 2);
   assert.equal(calls[0][2].day, 29);
+});
+
+function managementFixture() {
+  const data = fixture();
+  const card = new (data.elements.get('family-tasks-card'))();
+  card.setConfig({});
+  card.hass = data.hass;
+  return {...data, card, form:card.shadowRoot.form};
+}
+
+test('once requires an explicit date and defaults to keep without overriding a chosen setting', () => {
+  const {form} = managementFixture();
+  form.elements.frequency.value='once';form.elements.frequency.change();
+  assert.equal(form.elements.start.required,true);
+  assert.equal(form.elements.start.disabled,false);
+  assert.equal(form.elements.start.value,'');
+  assert.equal(form.elements.missed_behavior.value,'keep');
+  form.elements.missed_behavior.value='archive';form.elements.missed_behavior.change();
+  form.elements.frequency.value='daily';form.elements.frequency.change();
+  assert.equal(form.elements.start.required,false);
+  form.elements.frequency.value='once';form.elements.frequency.change();
+  assert.equal(form.elements.missed_behavior.value,'archive');
+});
+
+test('once creation sends a plain due date without recurrence-only fields', async () => {
+  const {form,hass} = managementFixture();
+  form.elements.frequency.value='once';form.elements.frequency.change();
+  form.elements.start.value='2040-02-29';
+  const calls=[];hass.callService=async(...args)=>calls.push(args);
+  await form.onsubmit({preventDefault(){},target:form});
+  assert.equal(calls[0][1],'add_task');
+  assert.equal(calls[0][2].start,'2040-02-29');
+  assert.equal(calls[0][2].missed_behavior,'keep');
+  for(const key of ['weekdays','month','day'])assert.equal(key in calls[0][2],false);
+});
+
+test('once cannot submit an empty date', async () => {
+  const {form,hass,card}=managementFixture();
+  form.elements.frequency.value='once';form.elements.frequency.change();
+  let calls=0;hass.callService=async()=>{calls++;};
+  await form.onsubmit({preventDefault(){},target:form});
+  assert.equal(calls,0);
+  assert.match(card.message,/Fälligkeitsdatum/);
+});
+
+test('duplicate submissions are ignored until the first save finishes', async () => {
+  const {form,hass,card}=managementFixture();
+  form.elements.frequency.value='once';form.elements.frequency.change();
+  form.elements.start.value='2026-11-09';
+  let finish,calls=0;hass.callService=()=>{calls++;return new Promise(resolve=>{finish=resolve;});};
+  const first=form.onsubmit({preventDefault(){},target:form});
+  assert.equal(card.shadowRoot.saveButton.disabled,true);
+  await form.onsubmit({preventDefault(){},target:form});
+  assert.equal(calls,1);
+  finish();await first;
+  assert.equal(card.shadowRoot.saveButton.disabled,false);
+  assert.equal(card.saving,false);
+});
+
+test('a failed save preserves entered values and enables retry', async () => {
+  const {form,hass,card}=managementFixture();
+  form.elements.frequency.value='once';form.elements.frequency.change();
+  form.elements.start.value='2026-11-09';
+  hass.callService=async()=>{throw new Error('Test failure');};
+  await form.onsubmit({preventDefault(){},target:form});
+  assert.equal(form.elements.start.value,'2026-11-09');
+  assert.equal(card.shadowRoot.saveButton.disabled,false);
+  assert.match(card.message,/Test failure/);
+});
+
+test('once editing displays due date, locks historical dates and prevents type switching', async () => {
+  const {card,hass,attributes}=managementFixture();
+  attributes.tasks=[{id:'t',person_id:'p',title:'Historical',frequency:'once',start:'2026-11-09',date_locked:true}];
+  card.editId='t';card.hass=hass;
+  assert.match(card.shadowRoot.innerHTML,/Einmalig/);
+  assert.match(card.shadowRoot.innerHTML,/Fällig am 9\.11\.2026|Fällig am 09\.11\.2026/);
+  assert.match(card.shadowRoot.innerHTML,/name="start"[^>]*readonly/);
+  assert.match(card.shadowRoot.innerHTML,/name="frequency" disabled/);
+  let calls=0;hass.callService=async()=>{calls++;};
+  const form=card.shadowRoot.form;
+  form.elements.frequency.value='daily';
+  await form.onsubmit({preventDefault(){},target:form});
+  assert.equal(calls,0);
 });
