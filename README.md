@@ -56,6 +56,12 @@ columns: 4
 
 The board displays today's tasks in columns by family member, grouped by time of day. It includes progress indicators and a touch-friendly design, and highlights overdue tasks. A **Panel** dashboard view is useful for wall-mounted tablets.
 
+The board and native To-do list use the same current occurrences. Overdue tasks
+completed today remain visible and can be unchecked for the rest of the day.
+The displayed day comes from Home Assistant, so a tablet's time zone or clock
+does not change which tasks are shown. Day changes are published on the next
+five-minute integration tick, even if no new tasks are due.
+
 If you omit `columns`, the board adjusts its column count to the available width. You can optionally set `min_column_width` (for example, `260`) when using automatic columns.
 
 ### Task management
@@ -114,9 +120,19 @@ Family Tasks provides a To-do list, a calendar, a catalog sensor, and counters f
 
 Entity IDs may differ if Home Assistant needs to resolve a naming conflict.
 
+The catalog exposes `today` (the Home Assistant date) and `current_instances`
+(all current occurrences, including overdue open tasks and overdue tasks
+completed today). The separate `history` attribute remains limited to the last
+500 stored occurrences. That limit does not truncate `current_instances`.
+
 ## Updates and data
 
 Install published updates through HACS and restart Home Assistant. After frontend changes, reload the browser or app. Keep the dashboard resource URL set to `/family_tasks/family-tasks-card.js`.
+
+When installing this board update, update the integration and reload the browser
+together. The board requires the catalog's `today` and `current_instances`
+attributes and shows an update notice if they are missing. The storage format
+is unchanged; no data migration is needed for these attributes.
 
 Task definitions, family members, and history are stored locally in Home Assistant's `.storage` directory, separately from the integration's code files. **Back up Home Assistant before upgrading**, and do not delete the stored Family Tasks data when replacing the integration files.
 
@@ -126,19 +142,36 @@ Never commit tokens, passwords, `secrets.yaml`, `.storage`, databases, backups, 
 
 ### Regression tests
 
-Run the dependency-free Python regression suite from the repository root:
+Run the Python regression suite from the repository root:
 
 ```shell
 python -B -m unittest discover -s tests -v
 ```
 
+The core tests require only Python. To also validate the registered service
+schemas with real voluptuous (including yearly month edits), install the test
+dependency before running the same command:
+
+```shell
+python -m pip install -r tests/requirements.txt
+```
+
+Run the frontend tests with Node.js (LTS) using its built-in test runner:
+
+```shell
+node --test tests/board.test.cjs
+```
+
 The tests use synthetic household data, a controlled clock, and in-memory storage.
 They cover recurrence boundaries, unfinished-task behavior, completion and undo,
-legacy defaults, persistence without a current occurrence, and service rebinding
-after an integration reload. Home Assistant APIs are replaced with test doubles;
-these tests do not validate Home Assistant's actual storage, HTTP registration,
-service schemas, or frontend. A running Home Assistant smoke test is still needed
-to verify those boundaries. No real `.storage` files are read or written.
+legacy defaults, persistence without a current occurrence, service rebinding
+after an integration reload, current-task selection beyond the history limit,
+and day changes without new instances. Frontend tests execute the card with DOM
+test doubles, including completion/undo, a differing tablet clock, and annual
+edit submission. Home Assistant APIs are replaced with test doubles; these tests
+do not validate Home Assistant's actual storage, HTTP registration, or browser
+rendering. A running Home Assistant smoke test is still needed to verify those
+boundaries. No real `.storage` files are read or written.
 
 Family Tasks is under active development. Until version 1.0, functionality and internal data structures may change. Feedback, bug reports, and suggestions are welcome through GitHub Issues.
 

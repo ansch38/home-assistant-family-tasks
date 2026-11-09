@@ -9,6 +9,11 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
+try:
+    import voluptuous as real_vol
+except ImportError:
+    real_vol = None
+
 
 ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "family_tasks"
 
@@ -36,6 +41,8 @@ def load_integration():
         "homeassistant.helpers.event", "homeassistant.helpers.config_validation",
         "homeassistant.util", "homeassistant.exceptions",
         "homeassistant.components", "homeassistant.components.http", "voluptuous",
+        "homeassistant.components.sensor", "homeassistant.components.todo",
+        "homeassistant.helpers.entity",
     )
     modules = {name: types.ModuleType(name) for name in names}
     modules["homeassistant.core"].HomeAssistant = object
@@ -53,11 +60,20 @@ def load_integration():
     modules["homeassistant.util"].dt = clock
     modules["homeassistant.exceptions"].HomeAssistantError = ValueError
     modules["homeassistant.components.http"].StaticPathConfig = lambda *args: args
+    modules["homeassistant.components.sensor"].SensorEntity = object
+    modules["homeassistant.helpers.entity"].Entity = object
+    todo = modules["homeassistant.components.todo"]
+    todo.TodoListEntity = object
+    todo.TodoItem = types.SimpleNamespace
+    todo.TodoItemStatus = types.SimpleNamespace(COMPLETED="completed", NEEDS_ACTION="needs_action")
+    todo.TodoListEntityFeature = types.SimpleNamespace(UPDATE_TODO_ITEM=1)
     # Schema validation itself belongs to HA/voluptuous and is not tested here.
     vol = modules["voluptuous"]
     vol.Required = vol.Optional = lambda name, **kwargs: name
     vol.Schema = lambda value: value
     vol.In = vol.All = vol.Coerce = vol.Range = lambda *args, **kwargs: None
+    if real_vol is not None:
+        modules["voluptuous"] = real_vol
     package = "_family_tasks_regression"
     spec = importlib.util.spec_from_file_location(
         package, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
@@ -67,24 +83,32 @@ def load_integration():
         try:
             spec.loader.exec_module(integration)
             store_module = sys.modules[f"{package}.store"]
+            sensor_module = importlib.import_module(f"{package}.sensor")
+            todo_module = importlib.import_module(f"{package}.todo")
         finally:
-            for name in (f"{package}.store", f"{package}.const"):
+            for name in (f"{package}.store", f"{package}.const", f"{package}.sensor", f"{package}.todo"):
                 sys.modules.pop(name, None)
-    return integration, store_module, clock
+    return integration, store_module, clock, sensor_module, todo_module
 
 
-INTEGRATION, STORE, CLOCK = load_integration()
+INTEGRATION, STORE, CLOCK, SENSOR, TODO = load_integration()
 
 
 def make_hass():
     handlers = {}
+    schemas = {}
+
+    def register(domain, name, handler, **kwargs):
+        handlers[(domain, name)] = handler
+        schemas[(domain, name)] = kwargs["schema"]
+
     services = types.SimpleNamespace(
         has_service=lambda domain, name: (domain, name) in handlers,
-        async_register=lambda domain, name, handler, **kwargs: handlers.__setitem__((domain, name), handler),
+        async_register=register,
         async_remove=lambda domain, name: handlers.pop((domain, name)),
     )
     hass = types.SimpleNamespace(
-        data={}, disk={}, handlers=handlers, services=services,
+        data={}, disk={}, handlers=handlers, schemas=schemas, services=services,
         http=types.SimpleNamespace(async_register_static_paths=AsyncMock()),
         config_entries=types.SimpleNamespace(
             async_forward_entry_setups=AsyncMock(),
@@ -260,6 +284,94 @@ class StoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.disk.saves, before)
 
 
+class CurrentViewTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = StoreTests.asyncSetUp
+    task = StoreTests.task
+
+    def assert_views(self, expected_ids):
+        catalog = SENSOR.FamilyCatalog(self.store, "test_entry")
+        todo = TODO.FamilyTodo(self.store, "test_entry")
+        attributes = catalog.extra_state_attributes
+        self.assertEqual(attributes["today"], self.now.date().isoformat())
+        self.assertEqual([i["id"] for i in attributes["current_instances"]], expected_ids)
+        self.assertEqual([i.uid for i in todo.todo_items], expected_ids)
+        return attributes, todo
+
+    async def test_catalog_and_todo_select_same_current_instances(self):
+        task = await self.task()
+        def instance(uid, due, status, completed_at=None, task_id=task["id"]):
+            return dict(id=uid, task_id=task_id, date=due, status=status, completed_at=completed_at)
+        self.store.data["instances"] = [
+            instance("today_open", "2026-11-04", "open"),
+            instance("today_done", "2026-11-04", "done", "2026-11-04T10:00:00+00:00"),
+            instance("overdue", "2026-10-01", "open"),
+            instance("overdue_done_today", "2026-10-01", "done", "2026-11-04T10:00:00+00:00"),
+            instance("old_done", "2026-10-01", "done", "2026-11-03T10:00:00+00:00"),
+            instance("missed", "2026-11-04", "missed"),
+            instance("future", "2026-11-05", "open"),
+            instance("deleted_task", "2026-11-04", "open", task_id="deleted"),
+        ]
+        self.assert_views(["today_open", "today_done", "overdue", "overdue_done_today"])
+
+    async def test_old_open_instance_outside_history_limit_remains_actionable(self):
+        task = await self.task(start="2026-01-01", missed_behavior="keep")
+        oldest = deepcopy(self.store.data["instances"][0])
+        self.store.data["instances"].extend(
+            dict(id=f"history-{index}", task_id=task["id"], date="2026-10-01", status="done", completed_at="2026-10-01T12:00:00+00:00")
+            for index in range(600)
+        )
+        attributes, _ = self.assert_views([oldest["id"]])
+        self.assertEqual(len(attributes["history"]), 500)
+        self.assertNotIn(oldest, attributes["history"])
+        attributes["current_instances"][0]["status"] = "done"
+        self.assertEqual(self.store.data["instances"][0]["status"], "open")
+
+    async def test_overdue_completion_and_undo_retain_same_uid_in_both_views(self):
+        await self.task(start="2026-11-01", missed_behavior="keep")
+        uid = self.store.data["instances"][0]["id"]
+        await self.store.complete(uid, True)
+        attributes, todo = self.assert_views([uid])
+        self.assertEqual(attributes["current_instances"][0]["status"], "done")
+        self.assertEqual(todo.todo_items[0].status, "completed")
+        await todo.async_update_todo_item(types.SimpleNamespace(uid=uid, status="needs_action"))
+        attributes, _ = self.assert_views([uid])
+        self.assertEqual(attributes["current_instances"][0]["status"], "open")
+
+    async def test_midnight_notifies_without_disk_changes_and_expires_done_items(self):
+        # Annual task has no next-day occurrence to force a save/notification.
+        await self.task(frequency="yearly", month=11, day=4)
+        uid = self.store.data["instances"][0]["id"]
+        await self.store.complete(uid, True)
+        self.assert_views([uid])
+        listener = Mock()
+        self.store.subscribe(listener)
+        saves = self.store.disk.saves
+        self.now += timedelta(days=1)
+        self.assertFalse(await self.store.rollover())
+        listener.assert_called_once_with()
+        self.assertEqual(self.store.disk.saves, saves)
+        self.assert_views([])
+        await self.store.rollover()
+        listener.assert_called_once_with()
+
+    async def test_midnight_refreshes_empty_catalog(self):
+        listener = Mock()
+        self.store.subscribe(listener)
+        self.now += timedelta(days=1)
+        await self.store.rollover()
+        listener.assert_called_once_with()
+        self.assert_views([])
+
+    async def test_home_assistant_day_can_differ_from_utc_day(self):
+        self.now = datetime(2026, 11, 5, 0, 15, tzinfo=timezone(timedelta(hours=1)))
+        self.assertEqual(self.now.astimezone(timezone.utc).date(), date(2026, 11, 4))
+        await self.task()
+        uid = self.store.data["instances"][0]["id"]
+        self.assert_views([uid])
+        await self.store.complete(uid, True)
+        self.assert_views([uid])
+
+
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.hass = make_hass()
@@ -278,7 +390,28 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         return ok
 
     async def call(self, service, **data):
+        if real_vol is not None:
+            data = self.hass.schemas[("family_tasks", service)](data)
         await self.hass.handlers[("family_tasks", service)](types.SimpleNamespace(data=data))
+
+    @unittest.skipIf(real_vol is None, "Install tests/requirements.txt for real service-schema validation")
+    async def test_yearly_edit_accepts_month_and_preserves_recorded_instances(self):
+        await INTEGRATION.async_setup_entry(self.hass, self.entry)
+        await self.call("add_person", name="Testperson")
+        await self.call("add_task", title="Yearly", person="Testperson", frequency="yearly", month=11, day=4)
+        store = self.hass.data["family_tasks"][self.entry.entry_id]
+        task_id = store.data["tasks"][0]["id"]
+        history = deepcopy(store.data["instances"])
+        await self.call("update_task", task_id=task_id, title="Yearly edited", person="Testperson", frequency="yearly", month=2, day=29)
+        restored = STORE.FamilyStore(self.hass)
+        await restored.load()
+        task = restored.data["tasks"][0]
+        self.assertEqual((task["id"], task["month"], task["day"]), (task_id, 2, 29))
+        self.assertEqual(restored.data["instances"], history)
+        self.assertEqual(list(STORE.occurrence_dates(task, date(2027, 1, 1), date(2027, 12, 31))), [date(2027, 2, 28)])
+        for month in (0, 13):
+            with self.assertRaises(real_vol.Invalid):
+                await self.call("update_task", task_id=task_id, title="Invalid", person="Testperson", frequency="yearly", month=month)
 
     async def test_reload_services_use_current_store(self):
         await INTEGRATION.async_setup_entry(self.hass, self.entry)

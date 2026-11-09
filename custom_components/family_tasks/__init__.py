@@ -72,6 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                vol.Optional("time_of_day", default="anytime"): vol.In(["morning", "daytime", "evening", "anytime"]),
                                vol.Optional("missed_behavior", default="archive"): vol.In(["discard", "archive", "keep"]),
                                vol.Optional("weekdays", default=""): cv.string,
+                               vol.Optional("month"): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
                                vol.Optional("day"): vol.All(vol.Coerce(int), vol.Range(min=1, max=31))}))
         hass.services.async_register(DOMAIN, "delete_task", delete_task,
             schema=vol.Schema({vol.Required("task_id"): cv.string}))
