@@ -1,6 +1,7 @@
 """Dependency-free regression tests; HA boundaries are replaced with test doubles."""
 
 import importlib.util
+import asyncio
 import sys
 import types
 import unittest
@@ -13,6 +14,14 @@ try:
     import voluptuous as real_vol
 except ImportError:
     real_vol = None
+
+try:
+    import aiohttp
+    # Load its classes before patch.dict restores sys.modules; otherwise a
+    # later HTTP test could import a second, incompatible Application class.
+    from aiohttp import web
+except ImportError:
+    aiohttp = None
 
 
 ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "family_tasks"
@@ -45,6 +54,9 @@ def load_integration():
         "homeassistant.helpers.entity",
     )
     modules = {name: types.ModuleType(name) for name in names}
+    if aiohttp is None:
+        modules["aiohttp"] = types.ModuleType("aiohttp")
+        modules["aiohttp"].web = types.SimpleNamespace()
     modules["homeassistant.core"].HomeAssistant = object
     modules["homeassistant.config_entries"].ConfigEntry = object
     modules["homeassistant.helpers.storage"].Store = MemoryDisk
@@ -59,7 +71,7 @@ def load_integration():
     clock = types.SimpleNamespace(now=lambda: datetime(2026, 11, 4, 12, tzinfo=timezone.utc))
     modules["homeassistant.util"].dt = clock
     modules["homeassistant.exceptions"].HomeAssistantError = ValueError
-    modules["homeassistant.components.http"].StaticPathConfig = lambda *args: args
+    modules["homeassistant.components.http"].HomeAssistantView = object
     modules["homeassistant.components.sensor"].SensorEntity = object
     modules["homeassistant.helpers.entity"].Entity = object
     todo = modules["homeassistant.components.todo"]
@@ -67,7 +79,7 @@ def load_integration():
     todo.TodoItem = types.SimpleNamespace
     todo.TodoItemStatus = types.SimpleNamespace(COMPLETED="completed", NEEDS_ACTION="needs_action")
     todo.TodoListEntityFeature = types.SimpleNamespace(UPDATE_TODO_ITEM=1)
-    # Schema validation itself belongs to HA/voluptuous and is not tested here.
+    # Without the optional dependency, exercise handlers without schema checks.
     vol = modules["voluptuous"]
     vol.Required = vol.Optional = lambda name, **kwargs: name
     vol.Schema = lambda value: value
@@ -86,7 +98,7 @@ def load_integration():
             sensor_module = importlib.import_module(f"{package}.sensor")
             todo_module = importlib.import_module(f"{package}.todo")
         finally:
-            for name in (f"{package}.store", f"{package}.const", f"{package}.sensor", f"{package}.todo"):
+            for name in (f"{package}.store", f"{package}.const", f"{package}.sensor", f"{package}.todo", f"{package}.frontend"):
                 sys.modules.pop(name, None)
     return integration, store_module, clock, sensor_module, todo_module
 
@@ -109,7 +121,8 @@ def make_hass():
     )
     hass = types.SimpleNamespace(
         data={}, disk={}, handlers=handlers, schemas=schemas, services=services,
-        http=types.SimpleNamespace(async_register_static_paths=AsyncMock()),
+        http=types.SimpleNamespace(register_view=Mock()),
+        async_add_executor_job=AsyncMock(side_effect=asyncio.to_thread),
         config_entries=types.SimpleNamespace(
             async_forward_entry_setups=AsyncMock(),
             async_unload_platforms=AsyncMock(return_value=True),
@@ -434,7 +447,10 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(current.data["people"]), 2)
         self.assertEqual(old.data, old_data)
         self.assertEqual(len(self.hass.timers), 1)
-        self.hass.http.async_register_static_paths.assert_awaited_once()
+        self.hass.http.register_view.assert_called_once()
+        view = self.hass.http.register_view.call_args.args[0]
+        self.assertEqual(view.url, "/family_tasks/family-tasks-card.js")
+        self.assertFalse(view.requires_auth)
 
     async def test_failed_unload_retains_services_and_store(self):
         await INTEGRATION.async_setup_entry(self.hass, self.entry)

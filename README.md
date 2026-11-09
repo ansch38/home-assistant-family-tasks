@@ -129,6 +129,24 @@ completed today). The separate `history` attribute remains limited to the last
 
 Install published updates through HACS and restart Home Assistant. After frontend changes, reload the browser or app. Keep the dashboard resource URL set to `/family_tasks/family-tasks-card.js`.
 
+The stable resource URL now serves a small loader. On each full dashboard reload,
+it checks the current card content through a non-cached API endpoint and imports
+the implementation using an automatically calculated content hash. You do not
+need to maintain version query strings in dashboard resources. The API endpoints
+serve bundled JavaScript and its hash only; household data is not exposed there.
+
+For the first upgrade from the old directly served card, a browser or service
+worker may still have that previous card cached. Reload again after the first
+reload has completed; if it persists, clear that client's Home Assistant frontend
+cache once. Server headers cannot invalidate a response already served without
+contacting the server. Subsequent card updates use the stable loader. An open
+dashboard tab still needs a full page reload to run updated JavaScript.
+
+Manual installations must include the new `frontend.py` file alongside the
+updated `__init__.py`. Restart Home Assistant after copying them so the HTTP
+routes are replaced. Reverse proxies must not override the API responses'
+`Cache-Control: no-store, max-age=0` policy.
+
 When installing this board update, update the integration and reload the browser
 together. The board requires the catalog's `today` and `current_instances`
 attributes and shows an update notice if they are missing. The storage format
@@ -149,8 +167,8 @@ python -B -m unittest discover -s tests -v
 ```
 
 The core tests require only Python. To also validate the registered service
-schemas with real voluptuous (including yearly month edits), install the test
-dependency before running the same command:
+schemas with real voluptuous and exercise the frontend with real aiohttp
+requests, install the test dependencies before running the same command:
 
 ```shell
 python -m pip install -r tests/requirements.txt
@@ -162,15 +180,33 @@ Run the frontend tests with Node.js (LTS) using its built-in test runner:
 node --test tests/board.test.cjs
 ```
 
+Optional browser tests execute the loader and real card in a browser, with a
+test service worker modeling HA's API/network and file-cache rules. They verify
+updates with a cached loader and the one-time transition from a cached old card.
+For example, using the already installed Microsoft Edge from PowerShell:
+
+```powershell
+python -m pip install -r tests/requirements-browser.txt
+$env:FAMILY_TASKS_BROWSER_TESTS = "1"
+$env:FAMILY_TASKS_BROWSER_CHANNEL = "msedge"
+python -B -m unittest discover -s tests -v
+```
+
+Without `FAMILY_TASKS_BROWSER_CHANNEL`, Playwright uses its Chromium installation
+(install it separately with `python -m playwright install chromium`). Browser
+tests use a fresh test profile and run without a visible window.
+
 The tests use synthetic household data, a controlled clock, and in-memory storage.
 They cover recurrence boundaries, unfinished-task behavior, completion and undo,
 legacy defaults, persistence without a current occurrence, service rebinding
 after an integration reload, current-task selection beyond the history limit,
 and day changes without new instances. Frontend tests execute the card with DOM
 test doubles, including completion/undo, a differing tablet clock, and annual
-edit submission. Home Assistant APIs are replaced with test doubles; these tests
-do not validate Home Assistant's actual storage, HTTP registration, or browser
-rendering. A running Home Assistant smoke test is still needed to verify those
+edit submission. HTTP tests check cache headers, conditional requests, content
+hash changes, HEAD requests, and missing files. Home Assistant APIs are replaced
+with test doubles; these tests do not validate Home Assistant's actual storage
+or HTTP view registration. Browser tests use a simulated worker, not HA's full
+frontend. A running Home Assistant smoke test is still needed to verify those
 boundaries. No real `.storage` files are read or written.
 
 Family Tasks is under active development. Until version 1.0, functionality and internal data structures may change. Feedback, bug reports, and suggestions are welcome through GitHub Issues.
