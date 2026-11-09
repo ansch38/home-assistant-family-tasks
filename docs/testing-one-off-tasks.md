@@ -1,12 +1,20 @@
 # Funktionstest: einmalige Aufgaben
 
-Dieser Test gehört zum Branch `feature/one-off-tasks`. Version und Release bleiben
-bis zur Bestätigung unverändert. Ein Fehler stoppt Merge und Veröffentlichung.
+Diese Checkliste wurde für die einmaligen Aufgaben in Version 0.7.0 verwendet.
+Bei künftigen Änderungen gilt weiterhin: Ein gemeldeter Fehler stoppt Merge und
+Veröffentlichung, bis die Korrektur erneut geprüft und bestätigt ist.
+
+Bestätigt wurden Anlegen, Abhaken und Reaktivieren auch für vergangene Termine,
+zukünftige Kalendertermine, Terminschutz, Verschieben, Archivieren/Verwerfen,
+Integrations-Reload und HA-Neustart. Das normale Browserprofil benötigte einmal
+„Disable cache“ beim Neuladen, bevor „Einmalig“ erschien; im privaten Profil war
+die Option sofort verfügbar. Weitere automatische Kartenupdates müssen in der
+laufenden Installation weiter beobachtet werden.
 
 ## Installation des Teststands
 
 1. Vorher ein Home-Assistant-Backup erstellen.
-2. Den kompletten Ordner `custom_components/family_tasks` dieses Branches nach
+2. Den kompletten Ordner `custom_components/family_tasks` des zu prüfenden Stands nach
    `/config/custom_components/family_tasks` kopieren. Gespeicherte Aufgabendaten
    in `.storage` nicht verändern. Der Ordner enthält auch `frontend.py`.
 3. Home Assistant neu starten und das Dashboard vollständig neu laden.

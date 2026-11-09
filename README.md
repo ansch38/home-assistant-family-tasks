@@ -206,7 +206,7 @@ another task status. Older versions such as 0.6.2 do not understand one-off
 definitions. Downgrading with one-off data is unsupported; use a compatible
 version or restore a backup from before creating one-off tasks.
 
-The feature-branch Home Assistant checklist is in
+The Home Assistant function-test checklist is in
 [docs/testing-one-off-tasks.md](docs/testing-one-off-tasks.md).
 
 Never commit tokens, passwords, `secrets.yaml`, `.storage`, databases, backups, private keys, or personal household task data to a public repository.
