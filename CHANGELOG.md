@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased (planned 0.7.0)
+
+- Add one-off tasks with an explicit calendar due date, assignee and time-of-day
+  group. They default to keep open and never create a recurring follow-up.
+- Support keep, archive and discard for past dates and long downtime, without
+  applying the recurring 366-day backfill limit to a single due date.
+- Reschedule future/open one-off tasks immediately with stable occurrence and
+  calendar IDs. Completed and archived due dates are protected. Switching
+  between one-off and recurring tasks is rejected.
+- Add a required due-date field, date-lock notice and protection against duplicate
+  submissions to the management card. Explicit missed-behavior choices survive
+  frequency selection and edits.
+- Keep the existing storage version and all existing recurring-task behavior.
+  One-off definitions add only the new frequency and an optional reserved
+  occurrence ID. Versions before one-off support cannot safely edit these data;
+  downgrades require a compatible version or a pre-feature backup.
+- Preserve the stable dashboard resource URL and automatic content-hash loader.
+  Browser tests verify updating the actual 0.6.2 card to the new one-off card.
+- Home Assistant function testing is pending. Merge and release are gated on
+  explicit confirmation of the checklist in `docs/testing-one-off-tasks.md`.
+
 ## 0.6.2 — 2026-11-09
 
 Task definitions are saved reliably even when nothing is due today. The family
