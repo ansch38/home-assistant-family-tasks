@@ -127,6 +127,8 @@ completed today). The separate `history` attribute remains limited to the last
 
 ## Updates and data
 
+Release notes are available in [CHANGELOG.md](CHANGELOG.md).
+
 Install published updates through HACS and restart Home Assistant. After frontend changes, reload the browser or app. Keep the dashboard resource URL set to `/family_tasks/family-tasks-card.js`.
 
 The stable resource URL now serves a small loader. On each full dashboard reload,
