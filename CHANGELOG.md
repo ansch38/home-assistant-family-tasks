@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (planned 0.7.0)
+## 0.7.0 — 2026-11-09
 
 - Add one-off tasks with an explicit calendar due date, assignee and time-of-day
   group. They default to keep open and never create a recurring follow-up.
@@ -18,8 +18,17 @@
   downgrades require a compatible version or a pre-feature backup.
 - Preserve the stable dashboard resource URL and automatic content-hash loader.
   Browser tests verify updating the actual 0.6.2 card to the new one-off card.
-- Home Assistant function testing is pending. Merge and release are gated on
-  explicit confirmation of the checklist in `docs/testing-one-off-tasks.md`.
+- Validation: 57 Python, HTTP and opt-in Edge browser tests and 14 card tests
+  pass. Manual Home Assistant checks confirmed creation, completion/undo with
+  past dates, future calendar visibility, rescheduling, protected dates,
+  archive/discard, integration reload and HA restart.
+- Upgrade: copy the complete integration folder, restart Home Assistant and
+  fully reload the dashboard. Keep `/family_tasks/family-tasks-card.js` without
+  a version suffix. The existing browser profile needed a one-time HTTP cache
+  bypass to show the new option during testing; a fresh private profile showed
+  it immediately. Cached older cards can require this initial reset. Future
+  updates through the loader are covered by browser tests, while further
+  in-installation update cycles remain to be observed.
 
 ## 0.6.2 — 2026-11-09
 
