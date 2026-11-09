@@ -9,5 +9,38 @@
     "abort": {
       "already_configured": "Family Tasks is already configured."
     }
+  },
+  "selector": {
+    "frequency": {
+      "options": {
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly",
+        "yearly": "Yearly",
+        "once": "Once"
+      }
+    }
+  },
+  "services": {
+    "add_task": {
+      "name": "Add task",
+      "description": "Create a one-off or recurring family task.",
+      "fields": {
+        "start": {
+          "name": "Start or due date",
+          "description": "Required for one-off tasks. A date without time, interpreted in the Home Assistant time zone."
+        }
+      }
+    },
+    "update_task": {
+      "name": "Update task",
+      "description": "Edit a task. Switching between one-off and recurring is not supported.",
+      "fields": {
+        "start": {
+          "name": "Due date",
+          "description": "Reschedule open one-off tasks only. Completed and archived dates are protected."
+        }
+      }
+    }
   }
 }

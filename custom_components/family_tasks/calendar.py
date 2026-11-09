@@ -26,14 +26,19 @@ class FamilyCalendar(CalendarEntity):
     def event(self):
         today = dt_util.now().date()
         events = self._events(today, today + timedelta(days=90))
-        return next((e for e in events if e.end > today), None)
+        # A single date can lie beyond the recurring calendar's lookahead.
+        for task in self.store.data["tasks"]:
+            if task["frequency"] == "once":
+                due = date.fromisoformat(task["start"])
+                if due > today + timedelta(days=90):
+                    events.extend(self._events(due, due, [task]))
+        return next((e for e in sorted(events, key=lambda e: (e.start, e.summary)) if e.end > today), None)
 
-    def _events(self, start, end):
+    def _events(self, start, end, tasks=None):
         statuses = {(i["task_id"], i["date"]): i["status"] for i in self.store.data["instances"]}
         result = []
         today = dt_util.now().date()
-        task_by_id = {task["id"]: task for task in self.store.data["tasks"]}
-        for task in self.store.data["tasks"]:
+        for task in self.store.data["tasks"] if tasks is None else tasks:
             for due in occurrence_dates(task, start, end):
                 status = statuses.get((task["id"], due.isoformat()))
                 if status is None and due < today and task.get("missed_behavior") == "discard":
@@ -43,7 +48,8 @@ class FamilyCalendar(CalendarEntity):
                 result.append(CalendarEvent(
                     start=due, end=due + timedelta(days=1),
                     summary=f'{prefix}{self.store.person_name(task["person_id"])}: {task["title"]}',
-                    description=f"Status: {status}", uid=f'{task["id"]}:{due.isoformat()}'))
+                    description=f"Status: {status}",
+                    uid=task.get("once_instance_id", task["id"]) if task["frequency"] == "once" else f'{task["id"]}:{due.isoformat()}'))
         return sorted(result, key=lambda e: (e.start, e.summary))
 
     async def async_get_events(self, hass, start_date, end_date):

@@ -26,7 +26,7 @@ class FamilyTodo(TodoListEntity):
                      summary=f'{self.store.person_name(tasks[i["task_id"]]["person_id"])}: {tasks[i["task_id"]]["title"]}',
                      status=TodoItemStatus.COMPLETED if i["status"] == "done" else TodoItemStatus.NEEDS_ACTION,
                      due=date.fromisoformat(i["date"]),
-                     description="Wiederkehrende Familienaufgabe")
+                     description="Einmalige Familienaufgabe" if tasks[i["task_id"]]["frequency"] == "once" else "Wiederkehrende Familienaufgabe")
             for i in self.store.current_instances()
         ]
 
