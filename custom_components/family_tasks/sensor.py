@@ -35,10 +35,15 @@ class FamilyCatalog(SensorEntity):
     @property
     def extra_state_attributes(self):
         today = self.store.today
+        tasks = deepcopy(self.store.data["tasks"])
+        locked = {i["task_id"] for i in self.store.data["instances"] if i["status"] in ("done", "missed")}
+        for task in tasks:
+            if task["frequency"] == "once":
+                task["date_locked"] = task["id"] in locked
         return {
             "today": today,
             "current_instances": deepcopy(self.store.current_instances(today)),
             "people": deepcopy(self.store.data["people"]),
-            "tasks": deepcopy(self.store.data["tasks"]),
+            "tasks": tasks,
             "history": deepcopy(self.store.data["instances"][-500:]),
         }

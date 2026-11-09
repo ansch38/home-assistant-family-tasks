@@ -5,16 +5,17 @@
 <h1 align="center">Family Tasks for Home Assistant</h1>
 
 <p align="center">
-  A family-friendly Home Assistant integration for recurring household tasks.
+  A family-friendly Home Assistant integration for one-off and recurring household tasks.
 </p>
 
 ---
 
-Family Tasks helps households organize recurring chores for multiple family members. It includes a tablet-friendly family board, task management in Home Assistant, and native To-do and Calendar entities.
+Family Tasks helps households organize one-off and recurring chores for multiple family members. It includes a tablet-friendly family board, task management in Home Assistant, and native To-do and Calendar entities.
 
 ## Features
 
-- Assign recurring tasks to individual family members.
+- Assign one-off or recurring tasks to individual family members.
+- Give one-off tasks an explicit due date, with no follow-up occurrence.
 - Repeat tasks **daily, weekly, monthly, or yearly**.
 - Organize tasks by **Morning, Daytime, Evening, or Anytime**.
 - Choose what happens to an unfinished task: **Discard, Archive, or Keep open**.
@@ -86,6 +87,7 @@ Add family members using this card. Renaming and deleting people is not currentl
 
 | Recurrence | How it works |
 | --- | --- |
+| Once | Choose a required due date. There is only one occurrence, including after completion, restart, or rescheduling. |
 | Daily | A new occurrence is scheduled each day. |
 | Weekly | Choose one or more weekdays. |
 | Monthly | Choose a day of the month. If the month is shorter, the last day is used. |
@@ -101,9 +103,48 @@ Each task has its own **When not completed** setting:
 | **Archive** | Mark the unfinished occurrence as `missed` and retain it in the history. | Put out the bins |
 | **Keep open** | Keep the original unfinished occurrence visible as overdue until it is completed. Avoid creating another open occurrence for the same task. | Replace a water filter |
 
-New tasks default to **Discard**. Tasks created before this setting was introduced retain the previous **Archive** behavior unless you change it.
+New recurring tasks default to **Discard**. New one-off tasks default to **Keep
+open**. An explicitly chosen setting is retained. Tasks created before this
+setting was introduced retain the previous **Archive** behavior unless you
+change it.
 
 A kept-open task retains its original due date. Once completed, subsequent occurrences follow its normal recurrence rule. An overdue task completed today can also be unchecked again on the same day.
+
+### One-off tasks
+
+Choose **Einmalig** in the management card and select **Fällig am** explicitly.
+The due date has no time component and uses the Home Assistant calendar day.
+Future one-off tasks appear in the management card and calendar; they enter the
+board and native To-do list when due. Completing a one-off task never creates a
+follow-up. Today's completed occurrence stays visible until the day changes so
+it can be unchecked, including if its original due date is older.
+
+Past due dates and long periods of downtime use the selected behavior:
+
+| Setting | One-off behavior |
+| --- | --- |
+| Keep open | Show the original due date as overdue until completed. |
+| Archive | Retain one `missed` occurrence, hidden from current tasks. |
+| Discard | Keep the definition without a current occurrence; remove an overdue open occurrence. |
+
+You can reschedule a future or open one-off task. Its occurrence ID remains the
+same, and all views update immediately. Moving it into the future hides it from
+current tasks until the new due date; moving it into the past applies its missed
+behavior immediately. Explicitly rescheduling a discarded task reuses its
+reserved occurrence ID. Repeated rollover alone does not recreate discarded
+past occurrences.
+
+Completed and archived dates are protected in both the service and the card;
+other details can still be edited. Switching between one-off and recurring is
+not supported. Definitions are never automatically deleted after completion or
+discard. Deleting a definition retains any recorded instances under the existing
+history behavior, while removing it from the management card, board, To-do and
+calendar. Separately created definitions may intentionally have the same title.
+
+For automations, `family_tasks.add_task` accepts `frequency: once` and requires
+`start` as a `YYYY-MM-DD` date. `family_tasks.update_task` accepts `start` to
+reschedule a one-off task; omitting it preserves the due date. Omitted
+`missed_behavior` on a one-off edit preserves the task's existing choice.
 
 ## Home Assistant entities
 
@@ -156,6 +197,18 @@ is unchanged; no data migration is needed for these attributes.
 
 Task definitions, family members, and history are stored locally in Home Assistant's `.storage` directory, separately from the integration's code files. **Back up Home Assistant before upgrading**, and do not delete the stored Family Tasks data when replacing the integration files.
 
+One-off support is additive: it uses `frequency: once`, the existing `start`
+date, and an optional `once_instance_id` on one-off definitions to reserve a
+stable identity even before the first occurrence. The storage key and version
+are unchanged; existing people, definitions, instances and IDs are not migrated.
+The catalog's `date_locked` flag is derived from recorded history, not stored as
+another task status. Older versions such as 0.6.2 do not understand one-off
+definitions. Downgrading with one-off data is unsupported; use a compatible
+version or restore a backup from before creating one-off tasks.
+
+The feature-branch Home Assistant checklist is in
+[docs/testing-one-off-tasks.md](docs/testing-one-off-tasks.md).
+
 Never commit tokens, passwords, `secrets.yaml`, `.storage`, databases, backups, private keys, or personal household task data to a public repository.
 
 ## Development status
@@ -202,7 +255,9 @@ The tests use synthetic household data, a controlled clock, and in-memory storag
 They cover recurrence boundaries, unfinished-task behavior, completion and undo,
 legacy defaults, persistence without a current occurrence, service rebinding
 after an integration reload, current-task selection beyond the history limit,
-and day changes without new instances. Frontend tests execute the card with DOM
+day changes without new instances, and the one-off lifecycle including long
+downtime, stable IDs, rescheduling, protected dates, and service validation.
+Frontend tests execute the card with DOM
 test doubles, including completion/undo, a differing tablet clock, and annual
 edit submission. HTTP tests check cache headers, conditional requests, content
 hash changes, HEAD requests, and missing files. Home Assistant APIs are replaced
@@ -210,6 +265,11 @@ with test doubles; these tests do not validate Home Assistant's actual storage
 or HTTP view registration. Browser tests use a simulated worker, not HA's full
 frontend. A running Home Assistant smoke test is still needed to verify those
 boundaries. No real `.storage` files are read or written.
+
+The one-off browser tests connect the real management card and board to the real
+store and registered service schemas through a test-only HTTP transport. They
+also verify double-submit prevention and updating the actual 0.6.2 card to the
+one-off implementation through the unchanged resource URL.
 
 Family Tasks is under active development. Until version 1.0, functionality and internal data structures may change. Feedback, bug reports, and suggestions are welcome through GitHub Issues.
 

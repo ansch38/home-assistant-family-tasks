@@ -6,6 +6,10 @@ from homeassistant.util import dt as dt_util
 
 def occurrence_dates(task, start, end):
     anchor = date.fromisoformat(task["start"])
+    if task["frequency"] == "once":
+        if start <= anchor <= end:
+            yield anchor
+        return
     current = max(anchor, start)
     while current <= end:
         freq = task["frequency"]
@@ -17,6 +21,19 @@ def occurrence_dates(task, start, end):
         if match:
             yield current
         current += timedelta(days=1)
+
+
+def _once_date(value):
+    """Require a calendar date, never infer it from a clock or timestamp."""
+    if not isinstance(value, str) or len(value) != 10:
+        raise ValueError("Einmalige Aufgaben benötigen ein Fälligkeitsdatum (JJJJ-MM-TT)")
+    try:
+        normalized = date.fromisoformat(value).isoformat()
+        if normalized != value:
+            raise ValueError("Expected JJJJ-MM-TT")
+        return normalized
+    except ValueError as err:
+        raise ValueError("Ungültiges Fälligkeitsdatum (JJJJ-MM-TT)") from err
 
 class FamilyStore:
     def __init__(self, hass):
@@ -83,15 +100,23 @@ class FamilyStore:
         await self.save()
         return person
 
-    async def add_task(self, title, person_id, frequency, weekdays=None, day=None, start=None, time_of_day="anytime", missed_behavior="discard", month=None):
+    async def add_task(self, title, person_id, frequency, weekdays=None, day=None, start=None, time_of_day="anytime", missed_behavior=None, month=None):
         if not any(p["id"] == person_id for p in self.data["people"]):
             raise ValueError("Unbekannte Person")
+        if frequency == "once":
+            start = _once_date(start)
+        if missed_behavior is None:
+            missed_behavior = "keep" if frequency == "once" else "discard"
         task = {"id": uuid4().hex, "title": title, "person_id": person_id,
                 "frequency": frequency, "weekdays": weekdays or [],
                 "day": day or (date.fromisoformat(start).day if start and frequency == "yearly" else dt_util.now().day if frequency == "yearly" else 1),
                 "month": month or (date.fromisoformat(start).month if start else dt_util.now().month),
                 "start": start or dt_util.now().date().isoformat(),
                 "time_of_day": time_of_day, "missed_behavior": missed_behavior}
+        if frequency == "once":
+            # Reserve one occurrence identity, also across explicit rescheduling
+            # after discard. A recurring definition needs no such field.
+            task["once_instance_id"] = uuid4().hex
         self.data["tasks"].append(task)
         # Rollover saves only when instances change. Persist the definition even
         # when its first occurrence is in the future or not due today.
@@ -120,6 +145,7 @@ class FamilyStore:
         self.data["instances"] = retained
 
         existing = {(i["task_id"], i["date"]) for i in retained}
+        recorded_task_ids = {i["task_id"] for i in retained}
         open_task_ids = {i["task_id"] for i in retained if i["status"] == "open"}
         latest_dates = {}
         for instance in retained:
@@ -127,8 +153,14 @@ class FamilyStore:
             latest_dates[tid] = max(instance["date"], latest_dates.get(tid, ""))
         for task in self.data["tasks"]:
             anchor = date.fromisoformat(task["start"])
-            # Backfill at most 366 days after downtime.
-            begin = max(anchor, today - timedelta(days=366))
+            if task["frequency"] == "once":
+                if task["id"] in recorded_task_ids:
+                    continue
+                # A single due date is not subject to recurring backfill limits.
+                begin = anchor
+            else:
+                # Backfill at most 366 days after downtime.
+                begin = max(anchor, today - timedelta(days=366))
             behavior = task.get("missed_behavior", "archive")
             for due in occurrence_dates(task, begin, today):
                 key = (task["id"], due.isoformat())
@@ -148,8 +180,10 @@ class FamilyStore:
                     status = "open"
                 else:
                     status = "open" if due == today else "missed"
+                uid = (task.setdefault("once_instance_id", uuid4().hex)
+                       if task["frequency"] == "once" else uuid4().hex)
                 self.data["instances"].append({
-                    "id": uuid4().hex, "task_id": task["id"],
+                    "id": uid, "task_id": task["id"],
                     "date": due.isoformat(), "status": status,
                     "completed_at": None,
                 })
@@ -174,15 +208,35 @@ class FamilyStore:
         instance["completed_at"] = dt_util.now().isoformat() if completed else None
         await self.save()
 
-    async def update_task(self, task_id, title, person_id, frequency, weekdays=None, day=None, time_of_day="anytime", missed_behavior="archive", month=None):
+    async def update_task(self, task_id, title, person_id, frequency, weekdays=None, day=None, time_of_day="anytime", missed_behavior=None, month=None, start=None):
         task = next((t for t in self.data["tasks"] if t["id"] == task_id), None)
         if task is None:
             raise ValueError("Aufgabe nicht gefunden")
         if not any(p["id"] == person_id for p in self.data["people"]):
             raise ValueError("Person nicht gefunden")
+        once = task["frequency"] == "once"
+        if once != (frequency == "once"):
+            raise ValueError("Ein Wechsel zwischen einmalig und wiederkehrend ist nicht möglich")
+        if not once and start is not None:
+            raise ValueError("Das Fälligkeitsdatum kann nur bei einmaligen Aufgaben geändert werden")
+        instances = [i for i in self.data["instances"] if i["task_id"] == task_id] if once else []
+        if once:
+            due = _once_date(start if start is not None else task["start"])
+            if due != task["start"] and any(i["status"] in ("done", "missed") for i in instances):
+                raise ValueError("Erledigte oder archivierte Termine können nicht verschoben werden")
+        if missed_behavior is None:
+            missed_behavior = task.get("missed_behavior", "keep") if once else "archive"
         task.update(title=title, person_id=person_id, frequency=frequency,
                     weekdays=weekdays or [], day=day or 1, time_of_day=time_of_day,
                     missed_behavior=missed_behavior)
+        if once:
+            task["start"] = due
+            for instance in instances:
+                if instance["status"] == "open":
+                    instance["date"] = due
+            if not await self.rollover():
+                await self.save()
+            return task
         if frequency == "yearly":
             task["month"] = month or task.get("month") or date.fromisoformat(task["start"]).month
         # Already recorded occurrences remain historical. Only future instances

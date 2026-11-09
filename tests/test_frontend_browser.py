@@ -68,6 +68,7 @@ class FrontendBrowserTests(unittest.IsolatedAsyncioTestCase):
             app.router.add_get(url, serve)
         app.router.add_get('/', index)
         app.router.add_get('/sw.js', worker)
+        self.add_routes(app)
         self.server = TestServer(app)
         self.addAsyncCleanup(self.server.close)
         await self.server.start_server()
@@ -88,6 +89,9 @@ class FrontendBrowserTests(unittest.IsolatedAsyncioTestCase):
             await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve, {once:true}));
           }
         }""")
+
+    def add_routes(self, app):
+        """Allow feature tests to attach a synthetic service transport."""
 
     async def load_card(self):
         await self.page.evaluate("""() => new Promise((resolve, reject) => {

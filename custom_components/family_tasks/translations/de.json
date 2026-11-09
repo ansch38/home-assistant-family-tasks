@@ -1,1 +1,46 @@
-{"config":{"step":{"user":{"title":"Family Tasks einrichten","description":"Erstellt lokale Familienaufgaben, Kalender und Aufgabenliste."}},"abort":{"already_configured":"Family Tasks ist bereits eingerichtet."}}}
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Family Tasks einrichten",
+        "description": "Erstellt lokale Familienaufgaben, Kalender und Aufgabenliste."
+      }
+    },
+    "abort": {
+      "already_configured": "Family Tasks ist bereits eingerichtet."
+    }
+  },
+  "selector": {
+    "frequency": {
+      "options": {
+        "daily": "Täglich",
+        "weekly": "Wöchentlich",
+        "monthly": "Monatlich",
+        "yearly": "Jährlich",
+        "once": "Einmalig"
+      }
+    }
+  },
+  "services": {
+    "add_task": {
+      "name": "Aufgabe anlegen",
+      "description": "Einmalige oder wiederkehrende Familienaufgabe anlegen.",
+      "fields": {
+        "start": {
+          "name": "Start- oder Fälligkeitsdatum",
+          "description": "Für einmalige Aufgaben erforderlich. Ohne Uhrzeit; es gilt die Home-Assistant-Zeitzone."
+        }
+      }
+    },
+    "update_task": {
+      "name": "Aufgabe bearbeiten",
+      "description": "Aufgabe bearbeiten. Ein Wechsel zwischen einmalig und wiederkehrend ist nicht möglich.",
+      "fields": {
+        "start": {
+          "name": "Fälligkeitsdatum",
+          "description": "Nur offene einmalige Aufgaben verschieben. Erledigte und archivierte Termine sind geschützt."
+        }
+      }
+    }
+  }
+}

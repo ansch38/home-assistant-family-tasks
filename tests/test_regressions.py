@@ -51,6 +51,7 @@ def load_integration():
         "homeassistant.util", "homeassistant.exceptions",
         "homeassistant.components", "homeassistant.components.http", "voluptuous",
         "homeassistant.components.sensor", "homeassistant.components.todo",
+        "homeassistant.components.calendar",
         "homeassistant.helpers.entity",
     )
     modules = {name: types.ModuleType(name) for name in names}
@@ -67,7 +68,14 @@ def load_integration():
         "homeassistant.helpers.config_validation"
     ]
     cv = modules["homeassistant.helpers.config_validation"]
-    cv.string, cv.date = str, date
+    cv.string = str
+    def calendar_date(value):
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if not isinstance(value, str) or len(value) != 10:
+            raise ValueError("Expected a calendar date")
+        return date.fromisoformat(value)
+    cv.date = calendar_date
     clock = types.SimpleNamespace(now=lambda: datetime(2026, 11, 4, 12, tzinfo=timezone.utc))
     modules["homeassistant.util"].dt = clock
     modules["homeassistant.exceptions"].HomeAssistantError = ValueError
@@ -79,6 +87,9 @@ def load_integration():
     todo.TodoItem = types.SimpleNamespace
     todo.TodoItemStatus = types.SimpleNamespace(COMPLETED="completed", NEEDS_ACTION="needs_action")
     todo.TodoListEntityFeature = types.SimpleNamespace(UPDATE_TODO_ITEM=1)
+    calendar = modules["homeassistant.components.calendar"]
+    calendar.CalendarEntity = object
+    calendar.CalendarEvent = types.SimpleNamespace
     # Without the optional dependency, exercise handlers without schema checks.
     vol = modules["voluptuous"]
     vol.Required = vol.Optional = lambda name, **kwargs: name
@@ -97,13 +108,14 @@ def load_integration():
             store_module = sys.modules[f"{package}.store"]
             sensor_module = importlib.import_module(f"{package}.sensor")
             todo_module = importlib.import_module(f"{package}.todo")
+            calendar_module = importlib.import_module(f"{package}.calendar")
         finally:
-            for name in (f"{package}.store", f"{package}.const", f"{package}.sensor", f"{package}.todo", f"{package}.frontend"):
+            for name in (f"{package}.store", f"{package}.const", f"{package}.sensor", f"{package}.todo", f"{package}.calendar", f"{package}.frontend"):
                 sys.modules.pop(name, None)
-    return integration, store_module, clock, sensor_module, todo_module
+    return integration, store_module, clock, sensor_module, todo_module, calendar_module
 
 
-INTEGRATION, STORE, CLOCK, SENSOR, TODO = load_integration()
+INTEGRATION, STORE, CLOCK, SENSOR, TODO, CALENDAR = load_integration()
 
 
 def make_hass():

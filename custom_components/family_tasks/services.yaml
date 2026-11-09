@@ -23,6 +23,8 @@ add_task:
             - weekly
             - monthly
             - yearly
+            - once
+          translation_key: frequency
     time_of_day:
       selector:
         select:
@@ -61,6 +63,7 @@ add_task:
           max: 31
           mode: box
     start:
+      description: Start date for recurring tasks; required due date for one-off tasks.
       selector:
         date:
 delete_task:
@@ -88,7 +91,12 @@ update_task:
       required: true
       selector:
         select:
-          options: [daily, weekly, monthly, yearly]
+          options: [daily, weekly, monthly, yearly, once]
+          translation_key: frequency
+    time_of_day:
+      selector:
+        select:
+          options: [morning, daytime, evening, anytime]
     missed_behavior:
       selector:
         select:
@@ -113,3 +121,7 @@ update_task:
         number:
           min: 1
           max: 31
+    start:
+      description: New due date for an open one-off task. Completed and archived dates are protected.
+      selector:
+        date:
